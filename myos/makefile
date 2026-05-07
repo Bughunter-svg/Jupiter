@@ -9,7 +9,7 @@ CFLAGS = -m32 -ffreestanding -nostdlib -fno-exceptions -fno-pic -Wall -Wextra -I
 OBJS = boot/boot.o kernel/kernel.o kernel/screen.o kernel/ports.o kernel/keyboard.o \
        kernel/string.o kernel/filesystem.o kernel/process.o kernel/timer.o \
        kernel/interrupts.o kernel/isr.o kernel/splash.o kernel/system.o kernel/memory.o \
-       kernel/switch.o kernel/editor.o kernel/network.o kernel/login.o
+       kernel/switch.o kernel/editor.o kernel/network.o kernel/netcmds.o kernel/login.o
 
 all: kernel.bin
 
@@ -57,6 +57,10 @@ kernel/system.o: kernel/system.c kernel/system.h
 
 kernel/memory.o: kernel/memory.c kernel/memory.h
 	$(CC) $(CFLAGS) -c $< -o $@
+
+kernel/netcmds.o: kernel/netcmds.c kernel/netcmds.h
+	$(CC) $(CFLAGS) -c kernel/netcmds.c -o kernel/netcmds.o
+
 
 kernel.bin: $(OBJS) linker.ld
 	$(LD) -m elf_i386 -T linker.ld -o $@ $(OBJS) -nostdlib

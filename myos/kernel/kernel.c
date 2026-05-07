@@ -12,7 +12,7 @@
 #include "network.h"
 #include "login.h"
 #include <stddef.h>
-
+#include "netcmds.h"
 #define LINE_SIZE 128
 
 // Forward declarations
@@ -218,7 +218,8 @@ void execute_command(char *input) {
         print("| [SYSTEM]  clear, echo, meminfo, ps, calc   |\n");
         print("| [SYSTEM]  run, time, timer, sleep          |\n");
         print("| [INFO]    cpuinfo, osinfo, status, df      |\n");
-        print("| [NETWORK] net, net test                    |\n");
+        print("| [NETWORK] ping, ifconfig, arp              |\n");
+        print("| [NETWORK] net, net test, net send          |\n");
         print("| [USER]    whoami, logout                   |\n");
         print("| [HELP]    help                             |\n");
         print("==============================================\n");
@@ -317,9 +318,21 @@ void execute_command(char *input) {
     else if (strcmp(args[0], "df") == 0) {
         show_diskinfo();
     }
+        else if (strcmp(args[0], "ping") == 0) {
+        cmd_ping(argc, args);
+    }
+    else if (strcmp(args[0], "ifconfig") == 0) {
+        cmd_ifconfig();
+    }
+    else if (strcmp(args[0], "arp") == 0) {
+        cmd_arp(argc, args);
+    }
     else if (strcmp(args[0], "net") == 0) {
         if (argc > 1 && strcmp(args[1], "test") == 0) {
             test_network_packets();
+        } else if (argc > 2 && strcmp(args[1], "send") == 0) {
+            /* net send <ip> <msg>  →  shift args so args[1]=ip, args[2]=msg */
+            cmd_netsend(argc - 1, args + 1);
         } else {
             check_network_status();
         }

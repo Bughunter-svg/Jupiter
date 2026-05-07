@@ -80,6 +80,7 @@ void send_arp_request(const ip_addr_t* target_ip);
 void arp_cache_add(const ip_addr_t* ip, const mac_addr_t* mac);
 int arp_cache_lookup(const ip_addr_t* ip, mac_addr_t* mac);
 void network_print_info();
+void arp_cache_print(void);
 
 // Utility functions
 uint16_t ntohs(uint16_t netshort);

@@ -1,14 +1,68 @@
 #include "memory.h"
 #include "screen.h"
 
-void* kmalloc(unsigned int size) {  // Change to unsigned int
-    print("Allocated ");
-    print_hex(size);
-    print(" bytes\n");
-    return (void*)0x100000;  // Simulated allocation
+/* ─── Bump-pointer heap ──────────────────────────────────────────── */
+static uint8_t *heap_ptr = (uint8_t *)HEAP_START;
+static size_t   heap_used = 0;
+
+void mem_init(void) {
+    heap_ptr  = (uint8_t *)HEAP_START;
+    heap_used = 0;
+    print("Memory: heap @ 0x100000, 4MB available\n");
 }
 
-void kfree(void* ptr) {
-    (void)ptr;  // Silence unused parameter warning
-    print("Freed memory\n");
+/*
+ * kmalloc – simple bump allocator with 8-byte alignment.
+ * Returns NULL when heap is exhausted.
+ */
+void *kmalloc(size_t size) {
+    if (size == 0) return (void *)0;
+
+    /* Align size to 8 bytes */
+    size_t aligned = (size + 7) & ~7U;
+
+    if ((size_t)heap_ptr + aligned > HEAP_END) {
+        print("kmalloc: OUT OF MEMORY\n");
+        return (void *)0;
+    }
+
+    void *ptr  = (void *)heap_ptr;
+    heap_ptr  += aligned;
+    heap_used += aligned;
+    return ptr;
+}
+
+/* Bump allocator – freeing individual blocks is not supported.
+   kfree is a no-op kept for API compatibility.                   */
+void kfree(void *ptr) {
+    (void)ptr;
+}
+
+/* ─── Statistics ─────────────────────────────────────────────────── */
+size_t mem_get_total(void) { return TOTAL_RAM_BYTES; }
+size_t mem_get_used(void)  { return heap_used; }
+size_t mem_get_free(void)  { return TOTAL_RAM_BYTES - heap_used; }
+
+/* ─── memset / memcpy / memcmp ───────────────────────────────────── */
+void *memset(void *s, int c, size_t n) {
+    uint8_t *p = (uint8_t *)s;
+    while (n--) *p++ = (uint8_t)c;
+    return s;
+}
+
+void *memcpy(void *dest, const void *src, size_t n) {
+    uint8_t       *d = (uint8_t *)dest;
+    const uint8_t *s = (const uint8_t *)src;
+    while (n--) *d++ = *s++;
+    return dest;
+}
+
+int memcmp(const void *s1, const void *s2, size_t n) {
+    const uint8_t *a = (const uint8_t *)s1;
+    const uint8_t *b = (const uint8_t *)s2;
+    while (n--) {
+        if (*a != *b) return (int)*a - (int)*b;
+        a++; b++;
+    }
+    return 0;
 }

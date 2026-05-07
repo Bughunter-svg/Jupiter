@@ -1,11 +1,13 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
-void show_cpuinfo();
-void show_meminfo();
-void show_osinfo();
-void show_status();
-void show_diskinfo();
-void calculator(int argc, char* args[]);
+#include <stdint.h>
 
-#endif
+void show_cpuinfo(void);
+void show_meminfo(void);
+void show_osinfo(void);
+void show_status(void);
+void show_diskinfo(void);
+void calculator(int argc, char *args[]);
+
+#endif /* SYSTEM_H */

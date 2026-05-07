@@ -1,102 +1,98 @@
 #include "process.h"
 #include "memory.h"
 #include "screen.h"
-#include <string.h>
+#include "string.h"
 
 ProcessControlBlock pcbs[MAX_PROCESSES];
-int current_pid = 0;
-int process_count = 1; // Kernel is process 0
+int current_pid   = 0;
+int process_count = 1;   /* kernel is process 0 */
 
-extern void switch_task_asm(ProcessControlBlock* current, ProcessControlBlock* next);
+extern void switch_task_asm(ProcessControlBlock *current, ProcessControlBlock *next);
 
-void init_scheduler() {
-    print("Initializing multi-tasking scheduler...\n");
+void init_scheduler(void) {
+    print("Initializing scheduler...\n");
     memset(pcbs, 0, sizeof(pcbs));
-    
-    // Kernel is process 0
-    pcbs[0].pid = 0;
-    pcbs[0].state = PROCESS_RUNNING;
+
+    /* Kernel is PID 0 */
+    pcbs[0].pid      = 0;
+    pcbs[0].state    = PROCESS_RUNNING;
     pcbs[0].priority = 0;
-    strcpy(pcbs[0].name, "kernel");
-    
+    /* Use our own strcpy from string.c */
+    int i = 0;
+    const char *n = "kernel";
+    while (n[i]) { pcbs[0].name[i] = n[i]; i++; }
+    pcbs[0].name[i] = '\0';
+
     print("Scheduler ready. Max processes: ");
     print_int(MAX_PROCESSES);
     print("\n");
 }
 
-int create_process(void (*entry)(), const char* name, int priority) {
+int create_process(void (*entry)(void), const char *name, int priority) {
     if (process_count >= MAX_PROCESSES) {
         print("Error: Max processes reached!\n");
         return -1;
     }
-    
+
     int pid = process_count++;
-    ProcessControlBlock* pcb = &pcbs[pid];
-    
-    pcb->pid = pid;
-    pcb->state = PROCESS_READY;
+    ProcessControlBlock *pcb = &pcbs[pid];
+
+    pcb->pid      = pid;
+    pcb->state    = PROCESS_READY;
     pcb->priority = priority;
-    pcb->eip = (uint32_t)entry;
-    pcb->esp = (uint32_t)kmalloc(STACK_SIZE) + STACK_SIZE - 16;
-    pcb->eflags = 0x202; // Interrupts enabled
-    strcpy(pcb->name, name);
-    
-    // Initialize stack with entry point
-    uint32_t* stack = (uint32_t*)pcb->esp;
-    *(--stack) = pcb->eflags;
-    *(--stack) = 0x08; // CS
-    *(--stack) = (uint32_t)entry;
-    
-    print("Created process: ");
-    print(name);
-    print(" (PID: ");
-    print_int(pid);
-    print(")\n");
-    
+    pcb->eip      = (uint32_t)entry;
+    pcb->eflags   = 0x202; /* interrupts enabled */
+
+    /* Allocate stack */
+    void *stack_mem = kmalloc(STACK_SIZE);
+    if (!stack_mem) {
+        print("Error: No memory for process stack\n");
+        process_count--;
+        return -1;
+    }
+    pcb->esp = (uint32_t)stack_mem + STACK_SIZE - 16;
+
+    int i = 0;
+    while (name[i] && i < 31) { pcb->name[i] = name[i]; i++; }
+    pcb->name[i] = '\0';
+
+    print("Created process: "); print(name);
+    print(" (PID "); print_int(pid); print(")\n");
     return pid;
 }
 
-void yield() {
-    // Simple round-robin scheduling
-    int next_pid = (current_pid + 1) % process_count;
-    
-    while (pcbs[next_pid].state != PROCESS_READY) {
-        next_pid = (next_pid + 1) % process_count;
-        if (next_pid == current_pid) return; // No other ready processes
+void yield(void) {
+    int next = (current_pid + 1) % process_count;
+    while (pcbs[next].state != PROCESS_READY) {
+        next = (next + 1) % process_count;
+        if (next == current_pid) return;
     }
-    
-    // Switch to next process
-    ProcessControlBlock* current = &pcbs[current_pid];
-    ProcessControlBlock* next = &pcbs[next_pid];
-    
-    current->state = PROCESS_READY;
-    next->state = PROCESS_RUNNING;
-    
-    switch_task_asm(current, next);
-    current_pid = next_pid;
+    ProcessControlBlock *cur  = &pcbs[current_pid];
+    ProcessControlBlock *nxt  = &pcbs[next];
+    cur->state = PROCESS_READY;
+    nxt->state = PROCESS_RUNNING;
+    switch_task_asm(cur, nxt);
+    current_pid = next;
 }
 
-void list_processes() {
-    print("PID\tState\t\tName\n");
+void list_processes(void) {
+    print("PID  STATE    PRIORITY  NAME\n");
     print("--------------------------------\n");
-    
     for (int i = 0; i < process_count; i++) {
-        print_int(pcbs[i].pid);
-        print("\t");
-        
+        char buf[4];
+        itoa(pcbs[i].pid, buf, 10);
+        print(buf); print("    ");
         switch (pcbs[i].state) {
-            case PROCESS_READY: print("READY\t\t"); break;
-            case PROCESS_RUNNING: print("RUNNING\t\t"); break;
-            case PROCESS_BLOCKED: print("BLOCKED\t\t"); break;
-            case PROCESS_ZOMBIE: print("ZOMBIE\t\t"); break;
+            case PROCESS_READY:   print("READY    "); break;
+            case PROCESS_RUNNING: print("RUNNING  "); break;
+            case PROCESS_BLOCKED: print("BLOCKED  "); break;
+            case PROCESS_ZOMBIE:  print("ZOMBIE   "); break;
         }
-        
-        print(pcbs[i].name);
-        print("\n");
+        itoa(pcbs[i].priority, buf, 10);
+        print(buf); print("         ");
+        print(pcbs[i].name); print("\n");
     }
 }
 
-int get_current_pid() {
-    return current_pid;
-}
-
+int get_current_pid(void)   { return current_pid; }
+int get_process_count(void) { return process_count; }
