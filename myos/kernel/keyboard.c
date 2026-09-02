@@ -148,25 +148,41 @@ void get_init() {
 }
 
 // Add this function to keyboard.c
-void keyboard_handler() {
-    unsigned char scancode = inb(0x60);
-    
-    // Basic keyboard buffer handling
-    if (keyboard_buffer_size < sizeof(keyboard_buffer) - 1) {
-        char key = get_key();
-        if (key) {
-            keyboard_buffer[keyboard_buffer_size++] = key;
-        }
-    }
-    
-    // Acknowledge interrupt
-    outb(0x20, 0x20);
-}
+
 
 int key_available() {
     return keyboard_buffer_size > 0;
 }
+void keyboard_handler() {
+    uint8_t scancode = inb(DATA_PORT);
 
+    if (scancode == 0x2A || scancode == 0x36) {
+        shift_pressed = 1;
+        return;
+    }
+
+    if (scancode == 0xAA || scancode == 0xB6) {
+        shift_pressed = 0;
+        return;
+    }
+
+    if (scancode & 0x80) return;
+
+    if (scancode == 0xE0) return;
+
+    if (scancode < sizeof(scancode_map)) {
+        char key;
+
+        if (shift_pressed)
+            key = shifted_scancode_map[scancode];
+        else
+            key = scancode_map[scancode];
+
+        if (key && keyboard_buffer_size < sizeof(keyboard_buffer) - 1) {
+            keyboard_buffer[keyboard_buffer_size++] = key;
+        }
+    }
+}
 char keyboard_pop() {
     if (keyboard_buffer_size > 0) {
         char key = keyboard_buffer[0];
