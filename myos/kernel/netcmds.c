@@ -114,12 +114,11 @@ static int build_ip_frame(uint8_t *buf,
     network_device_t *dev = get_network_device();
 
     /* ── Resolve destination MAC (ARP cache or broadcast) ── */
-    ip_addr_t  dst; memcpy(dst.addr, dst_ip, 4);
+    ip_addr_t dst;
     mac_addr_t dst_mac;
-    if (!arp_cache_lookup(&dst, &dst_mac)) {
-        /* Not cached – send ARP request and use broadcast for now */
-        send_arp_request(&dst);
-        memset(dst_mac.addr, 0xFF, 6);   /* broadcast while waiting */
+    memcpy(dst.addr, dst_ip, IP_ALEN);
+    if (!network_resolve_mac(&dst, &dst_mac)) {
+        return -1;
     }
 
     /* ── Ethernet header ── */
