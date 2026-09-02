@@ -76,6 +76,8 @@ int network_send_packet(const void* data, size_t length);
 int network_receive_packet(void* buffer, size_t buffer_size);
 void handle_arp_packet(const void* packet, size_t length);
 void handle_ip_packet(const void* packet, size_t length);
+int network_is_local_ip(const ip_addr_t *ip);
+int network_resolve_mac(const ip_addr_t *dest_ip, mac_addr_t *mac);
 void send_arp_request(const ip_addr_t* target_ip);
 void arp_cache_add(const ip_addr_t* ip, const mac_addr_t* mac);
 int arp_cache_lookup(const ip_addr_t* ip, mac_addr_t* mac);
