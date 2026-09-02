@@ -36,9 +36,47 @@ char keyboard_buffer[256] = {0};
 int keyboard_buffer_size = 0;
 
 int get_key() {
+    uint8_t scancode;
+
+    // Wait for key press
+    while (!(inb(STATUS_PORT) & 0x01));
+    scancode = inb(DATA_PORT);
+
+    // Handle Shift press/release
+    if (scancode == 0x2A || scancode == 0x36) { shift_pressed = 1; return 0; }
+    if (scancode == 0xAA || scancode == 0xB6) { shift_pressed = 0; return 0; }
+
+    if (scancode & 0x80) return 0; // ignore key release
+
+    // Handle extended codes (arrows only) - must check for 0xE0 first
+    if (scancode == 0xE0) {
+        while (!(inb(STATUS_PORT) & 0x01));
+        uint8_t ext_scancode = inb(DATA_PORT);
+        
+        // Only return arrow keys if they're press events (not release)
+        if (!(ext_scancode & 0x80)) {
+            switch(ext_scancode) {
+                case 0x48: return KEY_UP;
+                case 0x50: return KEY_DOWN;
+                case 0x4B: return KEY_LEFT;
+                case 0x4D: return KEY_RIGHT;
+            }
+        }
+        return 0; // ignore other extended codes
+    }
+
+    // Map normal scancode - use appropriate map based on shift state
+    if (scancode < sizeof(scancode_map)) {
+        if (shift_pressed) {
+            return shifted_scancode_map[scancode];
+        } else {
+            return scancode_map[scancode];
+        }
     while (!key_available()) {
         asm volatile("hlt");
     }
+
+    return 0;
     return keyboard_pop();
 }
 
