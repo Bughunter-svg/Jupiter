@@ -256,12 +256,28 @@ void cmd_ping(int argc, char *args[]) {
                 continue;
             }
 
-            eth_header_t  *re  = (eth_header_t *)rx_buf;
-            if (ntohs(re->type) != ETH_TYPE_IP) { elapsed_ms++; continue; }
-
-            ip_header_t   *rip = (ip_header_t *)(rx_buf + sizeof(eth_header_t));
+            eth_header_t *re = (eth_header_t *)rx_buf;
+            uint16_t eth_type = ntohs(re->type);
+            if (eth_type == ETH_TYPE_ARP) {
+                handle_arp_packet(rx_buf, rx_len);
+                elapsed_ms++;
+                continue;
+            }
+            if(eth_type !=ETH_TYPE_IP){
+                elapsed_ms++;
+                continue;
+            }
+            ip_header_t *rip = (ip_header_t *)(rx_buf + sizeof(eth_header_t));
             if (rip->protocol != IP_PROTO_ICMP) { elapsed_ms++; continue; }
-
+            if(memcmp(rip->src_ip, target_ip, IP_ALEN) !=0){
+                elapsed_ms++;
+                continue;
+            }
+            network_device_t *dev = get_network_device();
+            if (memcmp(rip->dest_ip, dev->ip_addr.addr, IP_ALEN) != 0) {
+                elapsed_ms++;
+                continue;
+            }
             uint8_t ip_hlen = (rip->ver_ihl & 0x0F) * 4;
             icmp_header_t *ric = (icmp_header_t *)
                                  (rx_buf + sizeof(eth_header_t) + ip_hlen);
