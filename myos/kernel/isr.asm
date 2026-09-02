@@ -1,12 +1,8 @@
 global isr_timer
 global isr_keyboard
 
-extern timer_handler
-extern keyboard_handler
-
 isr_timer:
     pusha
-    call timer_handler
     mov al, 0x20
     out 0x20, al
     popa
@@ -14,7 +10,6 @@ isr_timer:
 
 isr_keyboard:
     pusha
-    call keyboard_handler
     mov al, 0x20
     out 0x20, al
     popa
