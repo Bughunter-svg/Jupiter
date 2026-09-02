@@ -183,11 +183,35 @@ static int ne2000_detect(void) {
  * The NE2000 PROM occupies the first 32 bytes of NIC address space.
  * Bytes 0,2,4,6,8,10 hold the 6 MAC octets (every other byte).
  */
-static void ne2000_read_mac(void) {
+static int ne2000_read_mac(void) {
     uint8_t prom[32];
-    ne_dma_read(0x00, 0x00, prom, 32);
+
+    outb(nic.io_base + NE_CMD, CMD_PAGE0 | CMD_NODMA | CMD_STOP);
+
+    outb(nic.io_base + NE_DCR, 0x48);
+    outb(nic.io_base + NE_RBCR0, 32);
+    outb(nic.io_base + NE_RBCR1, 0);
+    outb(nic.io_base + NE_RSAR0, 0);
+    outb(nic.io_base + NE_RSAR1, 0);
+
+    outb(nic.io_base + NE_CMD, CMD_PAGE0 | CMD_RDMA_RD | CMD_STOP);
+
+    for (int i = 0; i < 32; i++)
+        prom[i] = inb(nic.io_base + NE_DMA_PORT);
+
     for (int i = 0; i < 6; i++)
         nic.mac_addr.addr[i] = prom[i * 2];
+
+    if (nic.mac_addr.addr[0] == 0xFF &&
+        nic.mac_addr.addr[1] == 0xFF &&
+        nic.mac_addr.addr[2] == 0xFF &&
+        nic.mac_addr.addr[3] == 0xFF &&
+        nic.mac_addr.addr[4] == 0xFF &&
+        nic.mac_addr.addr[5] == 0xFF) {
+        return 0;
+    }
+
+    return 1;
 }
 
 /* ─── network_init ───────────────────────────────────────────────── */
@@ -204,7 +228,11 @@ void network_init(void) {
     }
 
     /* Read MAC from PROM */
-    ne2000_read_mac();
+    if (!ne2000_read_mac()) {
+        print("Network: Failed to read NE2000 MAC\n");
+        net_ok = 0;
+        return;
+    }
 
     /* Program PAR0-5 in page 1 so NIC accepts frames for us */
     outb(nic.io_base + NE_CMD, CMD_PAGE1 | CMD_NODMA | CMD_STOP);
