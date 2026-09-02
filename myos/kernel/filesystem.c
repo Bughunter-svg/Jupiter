@@ -64,6 +64,29 @@ int fs_create(const char *filename, const char *content) {
     return 0;
 }
 
+int fs_write(const char *filename, const char *content) {
+    for (int i = 0; i < MAX_FILES; i++) {
+        if (files[i].used && strcmp(files[i].name, filename) == 0) {
+            int ct_len = strlen(content);
+
+            if (ct_len >= MAX_FILE_SIZE)
+                ct_len = MAX_FILE_SIZE - 1;
+
+            memcpy(files[i].data, content, ct_len);
+            files[i].data[ct_len] = '\0';
+            files[i].size = ct_len;
+
+            print("Saved: ");
+            print(filename);
+            print("\n");
+
+            return 1;
+        }
+    }
+
+    print("Error: File not found\n");
+    return 0;
+}
 /* ─── read ───────────────────────────────────────────────────────── */
 const char *fs_read(const char *filename) {
     for (int i = 0; i < MAX_FILES; i++)
