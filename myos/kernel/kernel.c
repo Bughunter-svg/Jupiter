@@ -241,14 +241,11 @@ void execute_command(char *input) {
         print_memory_info();
     }
     else if (strcmp(args[0], "create") == 0 && argc > 2) {
-        // For create, manually build the content string
-        // Find where the content starts in the original input
         char* content_start = args[2];
-        // Restore spaces between words
         for (int j = 2; j < argc - 1; j++) {
             char* space_pos = args[j] + strlen(args[j]);
             if (space_pos < &input[LINE_SIZE - 1]) {
-                *space_pos = ' ';  // Restore space
+                *space_pos = ' ';
             }
         }
         fs_create(args[1], content_start);
