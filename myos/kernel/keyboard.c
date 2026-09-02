@@ -171,12 +171,7 @@ void keyboard_handler() {
     if (scancode == 0xE0) return;
 
     if (scancode < sizeof(scancode_map)) {
-        char key;
-
-        if (shift_pressed)
-            key = shifted_scancode_map[scancode];
-        else
-            key = scancode_map[scancode];
+        char key = shift_pressed ? shifted_scancode_map[scancode] : scancode_map[scancode];
 
         if (key && keyboard_buffer_size < sizeof(keyboard_buffer) - 1) {
             keyboard_buffer[keyboard_buffer_size++] = key;
