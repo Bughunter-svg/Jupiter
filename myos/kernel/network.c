@@ -410,6 +410,57 @@ int arp_cache_lookup(const ip_addr_t *ip, mac_addr_t *mac) {
     }
     return 0;
 }
+int network_is_local_ip(const ip_addr_t *ip) {
+    for (int i = 0; i < IP_ALEN; i++) {
+        if ((ip->addr[i] & nic.netmask.addr[i]) !=
+            (nic.ip_addr.addr[i] & nic.netmask.addr[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+int network_resolve_mac(const ip_addr_t *dest_ip, mac_addr_t *mac) {
+    ip_addr_t next_hop;
+
+    if (network_is_local_ip(dest_ip)) {
+        memcpy(next_hop.addr, dest_ip->addr, IP_ALEN);
+    } else {
+        memcpy(next_hop.addr, nic.gateway.addr, IP_ALEN);
+    }
+
+    if (arp_cache_lookup(&next_hop, mac)) {
+        return 1;
+    }
+
+    send_arp_request(&next_hop);
+
+    uint8_t buffer[1514];
+
+    for (int attempt = 0; attempt < 100000; attempt++) {
+        int len = network_receive_packet(buffer, sizeof(buffer));
+
+        if (len > 0) {
+            eth_header_t *eth = (eth_header_t *)buffer;
+            uint16_t type = ntohs(eth->type);
+
+            if (type == ETH_TYPE_ARP) {
+                handle_arp_packet(buffer, len);
+
+                if (arp_cache_lookup(&next_hop, mac)) {
+                    return 1;
+                }
+            } else if (type == ETH_TYPE_IP) {
+                handle_ip_packet(buffer, len);
+            }
+        }
+
+        asm volatile("pause");
+    }
+
+    return 0;
+}
 void arp_cache_print(void) {
     char buf[4];
     int found = 0;
