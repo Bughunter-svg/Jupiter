@@ -394,7 +394,7 @@ void kmain(unsigned int magic, unsigned int *mb_info) {
     init_scheduler();
     init_interrupts();
     init_timer();
-    enable_interrups();
+    enable_interrupts();
     
     // Initialize users and show login screen
     init_users();
