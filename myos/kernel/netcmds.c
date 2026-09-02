@@ -298,7 +298,8 @@ void cmd_ping(int argc, char *args[]) {
         }
 
         /* ~1 second gap between pings */
-        for (volatile int d = 0; d < 1000 * PING_BUSY_LOOPS; d++)
+        uint32_t gap_start = (uint32_t)get_ticks();
+        while ((uint32_t)(get_ticks() - gap_start) < PING_GAP_TICKS)
             asm volatile("pause");
     }
 
