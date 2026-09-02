@@ -379,10 +379,7 @@ void kmain(unsigned int magic, unsigned int *mb_info) {
     if (magic != 0x2BADB002) {
         print("Error: Not loaded by Multiboot-compliant loader\n");
         return;
-    }
-    
-    disable_interrupts();
-    
+    }  
     char line[LINE_SIZE];
     clear_screen();
     
@@ -397,6 +394,7 @@ void kmain(unsigned int magic, unsigned int *mb_info) {
     init_scheduler();
     init_interrupts();
     init_timer();
+    enable_interrups();
     
     // Initialize users and show login screen
     init_users();
