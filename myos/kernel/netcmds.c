@@ -38,7 +38,7 @@ typedef struct {
 #define ICMP_ECHO_REPLY    0
 #define PING_PAYLOAD_SIZE  32
 #define PING_TIMEOUT_MS    300   /* ms – approx via busy-wait           */
-#define PING_GAP_TICKS     100 /* loops ≈ 1 ms on ~500 MHz QEMU       */
+#define PING_BUSY_LOOPS    100 /* loops ≈ 1 ms on ~500 MHz QEMU       */
 
 /* ═══════════════════════════════════════════════════════════════════
  *  Small helpers
