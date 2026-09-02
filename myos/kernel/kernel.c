@@ -240,15 +240,9 @@ void execute_command(char *input) {
     else if (strcmp(args[0], "meminfo") == 0) {
         print_memory_info();
     }
-    else if (strcmp(args[0], "create") == 0 && argc > 2) {
-        char* content_start = args[2];
-        for (int j = 2; j < argc - 1; j++) {
-            char* space_pos = args[j] + strlen(args[j]);
-            if (space_pos < &input[LINE_SIZE - 1]) {
-                *space_pos = ' ';
-            }
-        }
-        fs_create(args[1], content_start);
+    else if (strcmp(args[0], "create") == 0 && argc > 1) {
+        fs_create(args[1], "");
+        launch_editor(args[1]);
     }
     else if (strcmp(args[0], "read") == 0 && argc > 1) {
         const char* content = fs_read(args[1]);
@@ -391,7 +385,7 @@ void kmain(unsigned int magic, unsigned int *mb_info) {
     init_scheduler();
     init_interrupts();
     init_timer();
-    enable_interrupts();
+    disable_interrupts();
     
     // Initialize users and show login screen
     init_users();
