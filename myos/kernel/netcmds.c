@@ -23,8 +23,8 @@ typedef struct {
 #define ICMP_ECHO_REQUEST 8
 #define ICMP_ECHO_REPLY 0
 #define PING_PAYLOAD_SIZE 32
-#define PING_TIMEOUT_LOOPS 3000000
-#define PING_GAP_LOOPS 1000000
+#define PING_TIMEOUT_LOOPS 300
+#define PING_GAP_LOOPS 100
 
 static void print_ip(const uint8_t ip[4]) {
     char buf[4];
