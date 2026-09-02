@@ -235,64 +235,51 @@ void cmd_ping(int argc, char *args[]) {
 
         /* Record send time (tick-based) */
         uint32_t t_start = (uint32_t)get_ticks();
-        network_send_packet(frame, (size_t)frame_len);
+        if (network_send_packet(frame, (size_t)frame_len) != 0) {
+            print("ping: transmit failed\n");
+            break;
+        }
         sent++;
-
-        /* ── Wait for ICMP echo-reply ── */
         int reply_ok = 0;
         uint32_t elapsed_ms = 0;
-
-        for (int attempt = 0; attempt < PING_TIMEOUT_MS; attempt++) {
-            /* Busy-wait ~1 ms */
-            for (volatile int d = 0; d < PING_BUSY_LOOPS; d++)
-                asm volatile("pause");
-
+        while ((uint32_t)(get_ticks() - t_start) < PING_TIMEOUT_TICKS) {
             uint8_t rx_buf[1514];
             int rx_len = network_receive_packet(rx_buf, sizeof(rx_buf));
-            if (rx_len < (int)(sizeof(eth_header_t) +
-                               sizeof(ip_header_t) +
-                               sizeof(icmp_header_t))) {
-                elapsed_ms++;
+            if (rx_len < (int)(sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(icmp_header_t))) {
+                asm volatile("pause");
                 continue;
             }
-
             eth_header_t *re = (eth_header_t *)rx_buf;
             uint16_t eth_type = ntohs(re->type);
             if (eth_type == ETH_TYPE_ARP) {
                 handle_arp_packet(rx_buf, rx_len);
-                elapsed_ms++;
                 continue;
             }
-            if(eth_type !=ETH_TYPE_IP){
-                elapsed_ms++;
+            if (eth_type != ETH_TYPE_IP)
                 continue;
-            }
             ip_header_t *rip = (ip_header_t *)(rx_buf + sizeof(eth_header_t));
-            if (rip->protocol != IP_PROTO_ICMP) { elapsed_ms++; continue; }
-            if(memcmp(rip->src_ip, target_ip, IP_ALEN) !=0){
-                elapsed_ms++;
+            if (rip->protocol != IP_PROTO_ICMP)
                 continue;
-            }
+            if (memcmp(rip->src_ip, target_ip, IP_ALEN) != 0)
+                continue;
             network_device_t *dev = get_network_device();
-            if (memcmp(rip->dest_ip, dev->ip_addr.addr, IP_ALEN) != 0) {
-                elapsed_ms++;
+            if (memcmp(rip->dest_ip, dev->ip_addr.addr, IP_ALEN) != 0)
                 continue;
-            }
             uint8_t ip_hlen = (rip->ver_ihl & 0x0F) * 4;
-            icmp_header_t *ric = (icmp_header_t *)
-                                 (rx_buf + sizeof(eth_header_t) + ip_hlen);
-
-            if (ric->type != ICMP_ECHO_REPLY)   { elapsed_ms++; continue; }
-            if (ntohs(ric->id)  != PING_ID)     { elapsed_ms++; continue; }
-            if (ntohs(ric->seq) != seq)          { elapsed_ms++; continue; }
-
-            /* Got our reply */
+            if (rx_len < (int)(sizeof(eth_header_t) + ip_hlen + sizeof(icmp_header_t)))
+                continue;
+            icmp_header_t *ric = (icmp_header_t *)(rx_buf + sizeof(eth_header_t) + ip_hlen);
+            if (ric->type != ICMP_ECHO_REPLY)
+                continue;
+            if (ntohs(ric->id) != PING_ID)
+                continue;
+            if (ntohs(ric->seq) != seq)
+                continue;
             uint32_t t_end = (uint32_t)get_ticks();
-            elapsed_ms = (uint32_t)(t_end - t_start) * 10; /* ticks→ms @100Hz */
+            elapsed_ms = (t_end - t_start) * 10;
             reply_ok = 1;
             break;
         }
-
         if (reply_ok) {
             received++;
             total_ms += (int)elapsed_ms;
