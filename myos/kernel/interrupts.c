@@ -41,6 +41,7 @@ void init_idt() {
     // Set up ONLY timer interrupt (IRQ0 -> INT 0x20)
     extern void isr_keyboard();
     idt_set_gate(0x20, (unsigned long)isr_timer, 0x08, 0x8E);
+    idt_set_gate(0x21, (unsigned long)isr_keyboard, 0x08, 0x8E);
     
     asm volatile("lidtl (%0)" : : "r"(&idtp));
 }
@@ -55,7 +56,7 @@ void init_interrupts() {
     outb(0x21, 0x01); outb(0xA1, 0x01);  // ICW4: 8086 mode
     
     // MASK ALL INTERRUPTS except timer (IRQ0)
-    outb(0x21, 0xFC);  // 11111110 - only IRQ0 enabled
+    outb(0x21, 0xFD);  // 11111110 - only IRQ0 enabled
     outb(0xA1, 0xFF);  // 11111111 - all slave IRQs disabled
     
     print("PIC remapped - ONLY timer enabled\n");
