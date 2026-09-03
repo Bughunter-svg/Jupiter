@@ -4,11 +4,15 @@
 /* ─── Bump-pointer heap ──────────────────────────────────────────── */
 static uint8_t *heap_ptr = (uint8_t *)HEAP_START;
 static size_t   heap_used = 0;
+static size_t total_ram = 0;
 
 void mem_init(void) {
     heap_ptr  = (uint8_t *)HEAP_START;
     heap_used = 0;
-    print("Memory: heap @ 0x100000, 4MB available\n");
+    print("Memory Manager Initialized\n");
+}
+void mem_set_total(size_t total) {
+    total_ram = total;
 }
 
 /*
@@ -38,12 +42,20 @@ void kfree(void *ptr) {
     (void)ptr;
 }
 
-/* ─── Statistics ─────────────────────────────────────────────────── */
-size_t mem_get_total(void) { return TOTAL_RAM_BYTES; }
-size_t mem_get_used(void)  { return heap_used; }
-size_t mem_get_free(void)  { return TOTAL_RAM_BYTES - heap_used; }
+size_t mem_get_total(void) {
+    return total_ram;
+}
 
-/* ─── memset / memcpy / memcmp ───────────────────────────────────── */
+size_t mem_get_used(void) {
+    return heap_used;
+}
+
+size_t mem_get_free(void) {
+    if (total_ram > heap_used)
+        return total_ram - heap_used;
+
+    return 0;
+}
 void *memset(void *s, int c, size_t n) {
     uint8_t *p = (uint8_t *)s;
     while (n--) *p++ = (uint8_t)c;
