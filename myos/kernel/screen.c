@@ -34,6 +34,31 @@ static void put_char_at(char c, int col, int row, unsigned char attr) {
     video_memory[offset] = c;
     video_memory[offset + 1] = attr;
 }
+void screen_set_cursor(int col, int row) {
+    if (col < 0)
+        col = 0;
+
+    if (col >= SCREEN_WIDTH)
+        col = SCREEN_WIDTH - 1;
+
+    if (row < 0)
+        row = 0;
+
+    if (row >= SCREEN_HEIGHT)
+        row = SCREEN_HEIGHT - 1;
+
+    move_cursor(col, row);
+}
+
+void screen_put_char(char c, int col, int row) {
+    if (col < 0 || col >= SCREEN_WIDTH)
+        return;
+
+    if (row < 0 || row >= SCREEN_HEIGHT)
+        return;
+
+    put_char_at(c, col, row, WHITE_ON_BLACK);
+}
 
 // --- public ---
 void print_char(char c) {
