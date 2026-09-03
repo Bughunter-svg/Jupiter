@@ -17,6 +17,10 @@ static size_t align_size(size_t size) {
     return (size + 7) & ~7U;
 }
 
+static size_t header_size(void) {
+    return align_size(sizeof(block_header_t));
+}
+
 void mem_init(void) {
     heap_start = (uint8_t *)HEAP_START;
     heap_end = heap_start;
@@ -42,7 +46,7 @@ void *kmalloc(size_t size) {
         return (void *)0;
 
     size_t aligned = align_size(size);
-    size_t header_size = align_size(sizeof(block_header_t));
+    size_t hdr = header_size();
 
     block_header_t *current = free_list;
     block_header_t *previous = (block_header_t *)0;
@@ -56,16 +60,17 @@ void *kmalloc(size_t size) {
 
             current->free = 0;
             current->next = (block_header_t *)0;
+
             heap_used += current->size;
 
-            return (void *)((uint8_t *)current + header_size);
+            return (void *)((uint8_t *)current + hdr);
         }
 
         previous = current;
         current = current->next;
     }
 
-    if (heap_start + header_size + aligned > heap_end) {
+    if (heap_start + hdr + aligned > heap_end) {
         print("kmalloc: OUT OF MEMORY\n");
         return (void *)0;
     }
@@ -76,20 +81,26 @@ void *kmalloc(size_t size) {
     block->free = 0;
     block->next = (block_header_t *)0;
 
-    heap_start += header_size + aligned;
+    heap_start += hdr + aligned;
     heap_used += aligned;
 
-    return (void *)((uint8_t *)block + header_size);
+    return (void *)((uint8_t *)block + hdr);
 }
 
 void kfree(void *ptr) {
     if (!ptr)
         return;
 
-    size_t header_size = align_size(sizeof(block_header_t));
+    size_t hdr = header_size();
+
+    if ((uint8_t *)ptr < (uint8_t *)HEAP_START + hdr)
+        return;
+
+    if ((uint8_t *)ptr >= heap_start)
+        return;
 
     block_header_t *block =
-        (block_header_t *)((uint8_t *)ptr - header_size);
+        (block_header_t *)((uint8_t *)ptr - hdr);
 
     if (block->free)
         return;
