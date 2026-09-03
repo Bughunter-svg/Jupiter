@@ -15,7 +15,10 @@ static void draw_editor(const char *filename, const char *buffer, int cursor) {
     print("--------------------------------------------------\n");
 
     for (int i = 0; i < cursor; i++) {
-        print_char(buffer[i]);
+        if (buffer[i] == '\n')
+            print("\n");
+        else
+            print_char(buffer[i]);
     }
 
     print_char('_');
@@ -25,16 +28,21 @@ static void draw_editor(const char *filename, const char *buffer, int cursor) {
     print("Ctrl+S Save    Ctrl+Q Save & Exit\n");
 }
 
-void launch_editor(const char* filename) {
+void launch_editor(const char *filename) {
     char buffer[EDITOR_SIZE];
+
     const char *existing = fs_read(filename);
 
     int length = 0;
     int cursor = 0;
 
-    while (existing[length] && length < EDITOR_SIZE - 1) {
-        buffer[length] = existing[length];
-        length++;
+    if (existing &&
+        existing[0] != 'E') {
+        while (existing[length] &&
+               length < EDITOR_SIZE - 1) {
+            buffer[length] = existing[length];
+            length++;
+        }
     }
 
     buffer[length] = '\0';
@@ -86,6 +94,7 @@ void launch_editor(const char* filename) {
                 buffer[cursor] = '\n';
                 cursor++;
                 length++;
+
                 buffer[length] = '\0';
 
                 draw_editor(filename, buffer, cursor);
@@ -102,6 +111,7 @@ void launch_editor(const char* filename) {
                 buffer[cursor] = (char)key;
                 cursor++;
                 length++;
+
                 buffer[length] = '\0';
 
                 draw_editor(filename, buffer, cursor);
