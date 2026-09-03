@@ -10,6 +10,8 @@
 void clear_screen();
 void print(const char *str);
 void print_at(const char *str, int col, int row);
+void screen_set_cursor(int col, int row);
+void screen_put_char(char c, int col, int row);
 void print_char(char c);
 void print_hex(unsigned int num);
 void print_int(int num);
