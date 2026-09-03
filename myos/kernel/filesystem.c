@@ -8,6 +8,7 @@ typedef struct {
     char name[MAX_FILENAME];
     char *data;
     int  size;
+    int capacity;
     int  used;
 } file_t;
 
@@ -32,6 +33,12 @@ int fs_get_bytes_used(void) {
     return b;
 }
 
+static int file_capacity(int size) {
+    if (size < 1)
+        size = 1;
+
+    return (size + 7) & ~7;
+}
 /* ─── create ─────────────────────────────────────────────────────── */
 int fs_create(const char *filename, const char *content) {
     for (int i = 0; i < MAX_FILES; i++) {
@@ -43,7 +50,14 @@ int fs_create(const char *filename, const char *content) {
 
     for (int i = 0; i < MAX_FILES; i++) {
         if (!files[i].used) {
-            char *data = (char *)kmalloc(MAX_FILE_SIZE);
+            int content_len = strlen(content);
+
+            if (content_len >= MAX_FILE_SIZE)
+                content_len = MAX_FILE_SIZE - 1;
+
+            int capacity = file_capacity(content_len);
+
+            char *data = (char *)kmalloc(capacity);
 
             if (!data) {
                 print("Error: Not enough memory\n");
@@ -51,21 +65,19 @@ int fs_create(const char *filename, const char *content) {
             }
 
             int name_len = strlen(filename);
+
             if (name_len >= MAX_FILENAME)
                 name_len = MAX_FILENAME - 1;
 
             memcpy(files[i].name, filename, name_len);
             files[i].name[name_len] = '\0';
 
-            int content_len = strlen(content);
-            if (content_len >= MAX_FILE_SIZE)
-                content_len = MAX_FILE_SIZE - 1;
-
             memcpy(data, content, content_len);
             data[content_len] = '\0';
 
             files[i].data = data;
             files[i].size = content_len;
+            files[i].capacity = capacity;
             files[i].used = 1;
 
             print("File created: ");
@@ -83,14 +95,34 @@ int fs_create(const char *filename, const char *content) {
 int fs_write(const char *filename, const char *content) {
     for (int i = 0; i < MAX_FILES; i++) {
         if (files[i].used && strcmp(files[i].name, filename) == 0) {
-            int ct_len = strlen(content);
+            int new_size = strlen(content);
 
-            if (ct_len >= MAX_FILE_SIZE)
-                ct_len = MAX_FILE_SIZE - 1;
+            if (new_size >= MAX_FILE_SIZE)
+                new_size = MAX_FILE_SIZE - 1;
 
-            memcpy(files[i].data, content, ct_len);
-            files[i].data[ct_len] = '\0';
-            files[i].size = ct_len;
+            int new_capacity = file_capacity(new_size);
+
+            if (new_capacity != files[i].capacity) {
+                char *new_data = (char *)kmalloc(new_capacity);
+
+                if (!new_data) {
+                    print("Error: Not enough memory\n");
+                    return 0;
+                }
+
+                memcpy(new_data, content, new_size);
+                new_data[new_size] = '\0';
+
+                kfree(files[i].data);
+
+                files[i].data = new_data;
+                files[i].size = new_size;
+                files[i].capacity = new_capacity;
+            } else {
+                memcpy(files[i].data, content, new_size);
+                files[i].data[new_size] = '\0';
+                files[i].size = new_size;
+            }
 
             print("Saved: ");
             print(filename);
@@ -118,6 +150,7 @@ int fs_delete(const char *filename) {
             kfree(files[i].data);
             files[i].data = (char *)0;
             files[i].size = 0;
+            files[i].capacity = 0;
             files[i].used = 0;
             print("Deleted: ");
             print(filename);
@@ -152,17 +185,51 @@ void fs_list(void) {
 void fs_append(const char *filename, const char *content) {
     for (int i = 0; i < MAX_FILES; i++) {
         if (files[i].used && strcmp(files[i].name, filename) == 0) {
-            int available = MAX_FILE_SIZE - 1 - files[i].size;
-            int ct_len    = strlen(content);
-            if (ct_len > available) ct_len = available;
-            if (ct_len <= 0) { print("Error: File full\n"); return; }
-            memcpy(files[i].data + files[i].size, content, ct_len);
-            files[i].size            += ct_len;
-            files[i].data[files[i].size] = '\0';
-            print("Appended to "); print(filename); print("\n");
+            int old_size = files[i].size;
+            int append_size = strlen(content);
+            int new_size = old_size + append_size;
+
+            if (new_size >= MAX_FILE_SIZE)
+                new_size = MAX_FILE_SIZE - 1;
+
+            if (new_size <= old_size) {
+                print("Error: File full\n");
+                return;
+            }
+
+            int new_capacity = file_capacity(new_size);
+
+            if (new_capacity != files[i].capacity) {
+                char *new_data = (char *)kmalloc(new_capacity);
+
+                if (!new_data) {
+                    print("Error: Not enough memory\n");
+                    return;
+                }
+
+                memcpy(new_data, files[i].data, old_size);
+                memcpy(new_data + old_size, content, new_size - old_size);
+                new_data[new_size] = '\0';
+
+                kfree(files[i].data);
+
+                files[i].data = new_data;
+                files[i].capacity = new_capacity;
+            } else {
+                memcpy(files[i].data + old_size, content, new_size - old_size);
+                files[i].data[new_size] = '\0';
+            }
+
+            files[i].size = new_size;
+
+            print("Appended to ");
+            print(filename);
+            print("\n");
+
             return;
         }
     }
+
     print("Error: File not found\n");
 }
 
