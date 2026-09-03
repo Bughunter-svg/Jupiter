@@ -42,6 +42,7 @@ void *kmalloc(size_t size) {
         return (void *)0;
 
     size_t aligned = align_size(size);
+    size_t header_size = align_size(sizeof(block_header_t));
 
     block_header_t *current = free_list;
 
@@ -49,13 +50,12 @@ void *kmalloc(size_t size) {
         if (current->free && current->size >= aligned) {
             current->free = 0;
             heap_used += current->size;
-            return (void *)(current + 1);
+
+            return (void *)((uint8_t *)current + header_size);
         }
 
         current = current->next;
     }
-
-    size_t header_size = align_size(sizeof(block_header_t));
 
     if (heap_start + header_size + aligned > heap_end) {
         print("kmalloc: OUT OF MEMORY\n");
@@ -71,14 +71,17 @@ void *kmalloc(size_t size) {
     heap_start += header_size + aligned;
     heap_used += aligned;
 
-    return (void *)(block + 1);
+    return (void *)((uint8_t *)block + header_size);
 }
 
 void kfree(void *ptr) {
     if (!ptr)
         return;
 
-    block_header_t *block = ((block_header_t *)ptr) - 1;
+    size_t header_size = align_size(sizeof(block_header_t));
+
+    block_header_t *block =
+        (block_header_t *)((uint8_t *)ptr - header_size);
 
     if (block->free)
         return;
