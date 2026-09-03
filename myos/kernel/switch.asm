@@ -3,35 +3,23 @@ global switch_task_asm
 
 switch_task_asm:
     mov eax, [esp + 4]
+    mov edx, [esp + 8]
 
-    mov [eax + 0], eax
-    mov [eax + 4], ebx
-    mov [eax + 8], ecx
-    mov [eax + 12], edx
-    mov [eax + 16], esi
-    mov [eax + 20], edi
     mov [eax + 24], esp
     mov [eax + 28], ebp
 
-    mov ebx, [esp]
-    mov [eax + 32], ebx
+    mov ecx, [esp]
+    mov [eax + 32], ecx
 
     pushf
-    pop ebx
-    mov [eax + 36], ebx
+    pop ecx
+    mov [eax + 36], ecx
 
-    mov eax, [esp + 8]
+    mov esp, [edx + 24]
+    mov ebp, [edx + 28]
 
-    mov ebx, [eax + 4]
-    mov ecx, [eax + 8]
-    mov edx, [eax + 12]
-    mov esi, [eax + 16]
-    mov edi, [eax + 20]
-    mov esp, [eax + 24]
-    mov ebp, [eax + 28]
-
-    push dword [eax + 36]
+    push dword [edx + 36]
     popf
 
-    push dword [eax + 32]
+    push dword [edx + 32]
     ret
