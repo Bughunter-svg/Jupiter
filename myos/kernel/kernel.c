@@ -278,6 +278,9 @@ void execute_command(char *input) {
             print("Process created successfully.\n");
         }
     }
+    else if (strcmp(args[0], "yield") == 0) {
+        yield();
+    }
     else if (strcmp(args[0], "time") == 0) {
         print("Uptime: "); print_hex(get_ticks()); print(" ms\n");
     }
