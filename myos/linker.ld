@@ -6,7 +6,7 @@ SECTIONS
 
     .text : ALIGN(4K)
     {
-        *(.multiboot)   /* MULTIBOOT HEADER FIRST! */
+        *(.multiboot)
         *(.text)
     }
 
@@ -25,6 +25,8 @@ SECTIONS
         *(COMMON)
         *(.bss)
     }
+
+    kernel_end = ALIGN(4K);
 
     /DISCARD/ : {
         *(.note*)
