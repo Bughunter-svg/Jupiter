@@ -37,42 +37,71 @@ int create_process(void (*entry)(void), const char *name, int priority) {
     int pid = process_count++;
     ProcessControlBlock *pcb = &pcbs[pid];
 
-    pcb->pid      = pid;
-    pcb->state    = PROCESS_READY;
-    pcb->priority = priority;
-    pcb->eip      = (uint32_t)entry;
-    pcb->eflags   = 0x202; /* interrupts enabled */
-
-    /* Allocate stack */
     void *stack_mem = kmalloc(STACK_SIZE);
     if (!stack_mem) {
         print("Error: No memory for process stack\n");
         process_count--;
         return -1;
     }
-    pcb->esp = (uint32_t)stack_mem + STACK_SIZE - 16;
+
+    uint32_t stack_top = (uint32_t)stack_mem + STACK_SIZE;
+    stack_top -= sizeof(uint32_t);
+
+    *((uint32_t *)stack_top) = (uint32_t)entry;
+
+    pcb->eax     = 0;
+    pcb->ebx     = 0;
+    pcb->ecx     = 0;
+    pcb->edx     = 0;
+    pcb->esi     = 0;
+    pcb->edi     = 0;
+    pcb->esp     = stack_top;
+    pcb->ebp     = 0;
+    pcb->eip     = (uint32_t)entry;
+    pcb->eflags  = 0x202;
+    pcb->cr3     = 0;
+    pcb->pid     = pid;
+    pcb->state   = PROCESS_READY;
+    pcb->priority = priority;
 
     int i = 0;
-    while (name[i] && i < 31) { pcb->name[i] = name[i]; i++; }
+    while (name[i] && i < 31) {
+        pcb->name[i] = name[i];
+        i++;
+    }
     pcb->name[i] = '\0';
 
-    print("Created process: "); print(name);
-    print(" (PID "); print_int(pid); print(")\n");
+    print("Created process: ");
+    print(name);
+    print(" (PID ");
+    print_int(pid);
+    print(")\n");
+
     return pid;
 }
 
 void yield(void) {
     int next = (current_pid + 1) % process_count;
+
     while (pcbs[next].state != PROCESS_READY) {
         next = (next + 1) % process_count;
-        if (next == current_pid) return;
+
+        if (next == current_pid)
+            return;
     }
-    ProcessControlBlock *cur  = &pcbs[current_pid];
-    ProcessControlBlock *nxt  = &pcbs[next];
+
+    ProcessControlBlock *cur = &pcbs[current_pid];
+    ProcessControlBlock *nxt = &pcbs[next];
+
     cur->state = PROCESS_READY;
     nxt->state = PROCESS_RUNNING;
-    switch_task_asm(cur, nxt);
+
     current_pid = next;
+
+    switch_task_asm(cur, nxt);
+
+    current_pid = cur->pid;
+    cur->state = PROCESS_RUNNING;
 }
 
 void list_processes(void) {
