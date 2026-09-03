@@ -6,7 +6,7 @@
 
 typedef struct {
     char name[MAX_FILENAME];
-    char data[MAX_FILE_SIZE];
+    char *data;
     int  size;
     int  used;
 } file_t;
@@ -34,33 +34,49 @@ int fs_get_bytes_used(void) {
 
 /* ─── create ─────────────────────────────────────────────────────── */
 int fs_create(const char *filename, const char *content) {
-    /* Check for duplicate */
     for (int i = 0; i < MAX_FILES; i++) {
         if (files[i].used && strcmp(files[i].name, filename) == 0) {
-            print("Error: File already exists: "); print(filename); print("\n");
+            print("Error: File already exists\n");
             return 0;
         }
     }
+
     for (int i = 0; i < MAX_FILES; i++) {
         if (!files[i].used) {
-            /* Safe copy with truncation */
-            int fn_len = strlen(filename);
-            if (fn_len >= MAX_FILENAME) fn_len = MAX_FILENAME - 1;
-            memcpy(files[i].name, filename, fn_len);
-            files[i].name[fn_len] = '\0';
+            char *data = (char *)kmalloc(MAX_FILE_SIZE);
 
-            int ct_len = strlen(content);
-            if (ct_len >= MAX_FILE_SIZE) ct_len = MAX_FILE_SIZE - 1;
-            memcpy(files[i].data, content, ct_len);
-            files[i].data[ct_len] = '\0';
-            files[i].size = ct_len;
+            if (!data) {
+                print("Error: Not enough memory\n");
+                return 0;
+            }
+
+            int name_len = strlen(filename);
+            if (name_len >= MAX_FILENAME)
+                name_len = MAX_FILENAME - 1;
+
+            memcpy(files[i].name, filename, name_len);
+            files[i].name[name_len] = '\0';
+
+            int content_len = strlen(content);
+            if (content_len >= MAX_FILE_SIZE)
+                content_len = MAX_FILE_SIZE - 1;
+
+            memcpy(data, content, content_len);
+            data[content_len] = '\0';
+
+            files[i].data = data;
+            files[i].size = content_len;
             files[i].used = 1;
 
-            print("Created: "); print(filename); print("\n");
+            print("File created: ");
+            print(filename);
+            print("\n");
+
             return 1;
         }
     }
-    print("Error: No free file slots\n");
+
+    print("Error: Maximum file limit reached\n");
     return 0;
 }
 
