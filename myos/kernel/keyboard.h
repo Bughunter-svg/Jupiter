@@ -12,12 +12,12 @@
 extern char keyboard_buffer[256];
 extern int keyboard_buffer_size;
 
-int get_key();
-void get_line(char* buffer, int size);
-void get_init();
-int key_available();
-char keyboard_pop();
-void init_keyboard();
-void keyboard_handler();
+int get_key(void);
+void get_line(char *buffer, int size);
+void get_init(void);
+int key_available(void);
+char keyboard_pop(void);
+void init_keyboard(void);
+void keyboard_handler(void);
 
 #endif
