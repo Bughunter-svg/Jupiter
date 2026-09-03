@@ -45,15 +45,23 @@ void *kmalloc(size_t size) {
     size_t header_size = align_size(sizeof(block_header_t));
 
     block_header_t *current = free_list;
+    block_header_t *previous = (block_header_t *)0;
 
     while (current) {
         if (current->free && current->size >= aligned) {
+            if (previous)
+                previous->next = current->next;
+            else
+                free_list = current->next;
+
             current->free = 0;
+            current->next = (block_header_t *)0;
             heap_used += current->size;
 
             return (void *)((uint8_t *)current + header_size);
         }
 
+        previous = current;
         current = current->next;
     }
 
