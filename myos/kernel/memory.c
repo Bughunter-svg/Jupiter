@@ -20,19 +20,27 @@ void mem_set_total(size_t total) {
  * Returns NULL when heap is exhausted.
  */
 void *kmalloc(size_t size) {
-    if (size == 0) return (void *)0;
+    if (size == 0)
+        return (void *)0;
 
-    /* Align size to 8 bytes */
     size_t aligned = (size + 7) & ~7U;
+    size_t heap_limit = total_ram;
 
-    if ((size_t)heap_ptr + aligned > HEAP_END) {
+    if (heap_limit < MIN_HEAP_SIZE)
+        heap_limit = MIN_HEAP_SIZE;
+
+    if (heap_limit > 0x10000000U)
+        heap_limit = 0x10000000U;
+
+    if ((size_t)heap_ptr + aligned > heap_limit) {
         print("kmalloc: OUT OF MEMORY\n");
         return (void *)0;
     }
 
-    void *ptr  = (void *)heap_ptr;
-    heap_ptr  += aligned;
+    void *ptr = (void *)heap_ptr;
+    heap_ptr += aligned;
     heap_used += aligned;
+
     return ptr;
 }
 
