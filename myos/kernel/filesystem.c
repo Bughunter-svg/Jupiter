@@ -115,8 +115,13 @@ const char *fs_read(const char *filename) {
 int fs_delete(const char *filename) {
     for (int i = 0; i < MAX_FILES; i++) {
         if (files[i].used && strcmp(files[i].name, filename) == 0) {
+            kfree(files[i].data);
+            files[i].data = (char *)0;
+            files[i].size = 0;
             files[i].used = 0;
-            print("Deleted: "); print(filename); print("\n");
+            print("Deleted: ");
+            print(filename);
+            print("\n");
             return 1;
         }
     }
