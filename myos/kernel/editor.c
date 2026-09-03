@@ -63,26 +63,14 @@ static void draw_editor(const char *filename,
                         int cursor) {
     clear_editor_area();
 
-    screen_put_char('J', 0, 0);
-    screen_put_char('u', 1, 0);
-    screen_put_char('p', 2, 0);
-    screen_put_char('i', 3, 0);
-    screen_put_char('t', 4, 0);
-    screen_put_char('e', 5, 0);
-    screen_put_char('r', 6, 0);
-    screen_put_char('O', 7, 0);
-    screen_put_char('S', 8, 0);
+    print_at("JupiterOS Editor - ", 0, 0);
 
-    screen_put_char(' ', 9, 0);
-    screen_put_char('-', 10, 0);
-    screen_put_char(' ', 11, 0);
-
-    int name_pos = 12;
+    int name_col = 19;
 
     for (int i = 0;
-         filename[i] && name_pos < SCREEN_WIDTH;
-         i++, name_pos++) {
-        screen_put_char(filename[i], name_pos, 0);
+         filename[i] && name_col < SCREEN_WIDTH;
+         i++, name_col++) {
+        screen_put_char(filename[i], name_col, 0);
     }
 
     for (int col = 0; col < SCREEN_WIDTH; col++)
@@ -101,7 +89,10 @@ static void draw_editor(const char *filename,
             continue;
         }
 
-        screen_put_char(buffer[i], col, row);
+        if (i == cursor)
+            screen_put_char_attr(buffer[i], col, row, 0xF0);
+        else
+            screen_put_char(buffer[i], col, row);
 
         col++;
 
@@ -111,31 +102,43 @@ static void draw_editor(const char *filename,
         }
     }
 
-    for (int col2 = 0; col2 < SCREEN_WIDTH; col2++)
-        screen_put_char('-', col2, EDITOR_BOTTOM);
-
-    const char *footer = "^S Save   ^Q Save & Exit   Arrows Move";
-
-    int footer_col = 0;
-
-    for (int i = 0;
-         footer[i] && footer_col < SCREEN_WIDTH;
-         i++, footer_col++) {
-        screen_put_char(footer[i], footer_col, EDITOR_BOTTOM + 1);
-    }
-
     int cursor_col = get_line_col(buffer, cursor);
     int cursor_row = get_line_row(buffer, cursor);
 
-    if (cursor_row >= EDITOR_ROWS)
-        cursor_row = EDITOR_ROWS - 1;
+    if (cursor_row < EDITOR_ROWS) {
+        if (cursor_col >= SCREEN_WIDTH)
+            cursor_col = SCREEN_WIDTH - 1;
 
-    if (cursor_col >= SCREEN_WIDTH)
-        cursor_col = SCREEN_WIDTH - 1;
+        if (cursor < length &&
+            buffer[cursor] != '\n') {
+            screen_put_char_attr(
+                buffer[cursor],
+                cursor_col,
+                EDITOR_TOP + cursor_row,
+                0xF0
+            );
+        } else {
+            screen_put_char_attr(
+                ' ',
+                cursor_col,
+                EDITOR_TOP + cursor_row,
+                0xF0
+            );
+        }
+    }
 
-    screen_set_cursor(cursor_col, EDITOR_TOP + cursor_row);
+    for (int col2 = 0; col2 < SCREEN_WIDTH; col2++)
+        screen_put_char('-', col2, EDITOR_BOTTOM);
+
+    print_at("^S Save   ^Q Save & Exit   Arrows Move",
+             0,
+             EDITOR_BOTTOM + 1);
+
+    screen_set_cursor(
+        cursor_col,
+        EDITOR_TOP + cursor_row
+    );
 }
-
 void launch_editor(const char *filename) {
     char buffer[EDITOR_SIZE];
 
