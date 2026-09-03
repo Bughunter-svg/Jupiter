@@ -273,7 +273,10 @@ void execute_command(char *input) {
         list_processes();
     }
     else if (strcmp(args[0], "run") == 0 && argc > 1) {
-        print("Process execution coming soon!\n");
+        int pid = create_process(test_process, args[1], 1);
+        if (pid >= 0) {
+            print("Process created successfully.\n");
+        }
     }
     else if (strcmp(args[0], "time") == 0) {
         print("Uptime: "); print_hex(get_ticks()); print(" ms\n");
