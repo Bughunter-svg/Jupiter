@@ -73,6 +73,15 @@ void print_char(char c) {
     scroll();
     move_cursor(cursor_x, cursor_y);
 }
+void screen_put_char_attr(char c, int col, int row, unsigned char attr) {
+    if (col < 0 || col >= SCREEN_WIDTH)
+        return;
+
+    if (row < 0 || row >= SCREEN_HEIGHT)
+        return;
+
+    put_char_at(c, col, row, attr);
+}
 
 void clear_screen() {
     int i;
