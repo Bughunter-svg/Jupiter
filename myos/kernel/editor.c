@@ -15,18 +15,14 @@ static void draw_editor(const char *filename, const char *buffer, int cursor) {
     print("--------------------------------------------------\n");
 
     for (int i = 0; i < cursor; i++) {
-        if (buffer[i] == '\n') {
-            print("\n");
-        } else {
-            print_char(buffer[i]);
-        }
+        print_char(buffer[i]);
     }
 
     print_char('_');
 
     print("\n");
     print("--------------------------------------------------\n");
-    print("Ctrl+S Save    Ctrl+Q Exit\n");
+    print("Ctrl+S Save    Ctrl+Q Save & Exit\n");
 }
 
 void launch_editor(const char* filename) {
@@ -44,18 +40,22 @@ void launch_editor(const char* filename) {
     buffer[length] = '\0';
     cursor = length;
 
-    while (1) {
-        draw_editor(filename, buffer, cursor);
+    draw_editor(filename, buffer, cursor);
 
+    while (1) {
         int key = get_key();
 
-        if (key == 19) {
+        if (!key)
+            continue;
+
+        if (key == KEY_CTRL_S) {
             buffer[length] = '\0';
             fs_write(filename, buffer);
+            draw_editor(filename, buffer, cursor);
             continue;
         }
 
-        if (key == 17) {
+        if (key == KEY_CTRL_Q) {
             buffer[length] = '\0';
             fs_write(filename, buffer);
             clear_screen();
@@ -66,18 +66,31 @@ void launch_editor(const char* filename) {
             if (cursor > 0) {
                 cursor--;
                 length--;
+
+                for (int i = cursor; i < length; i++)
+                    buffer[i] = buffer[i + 1];
+
                 buffer[length] = '\0';
+
+                draw_editor(filename, buffer, cursor);
             }
+
             continue;
         }
 
         if (key == '\n' || key == '\r') {
             if (length < EDITOR_SIZE - 1) {
+                for (int i = length; i > cursor; i--)
+                    buffer[i] = buffer[i - 1];
+
                 buffer[cursor] = '\n';
                 cursor++;
                 length++;
                 buffer[length] = '\0';
+
+                draw_editor(filename, buffer, cursor);
             }
+
             continue;
         }
 
@@ -90,6 +103,8 @@ void launch_editor(const char* filename) {
                 cursor++;
                 length++;
                 buffer[length] = '\0';
+
+                draw_editor(filename, buffer, cursor);
             }
         }
     }
