@@ -216,6 +216,7 @@ void execute_command(char *input) {
         i++;
     }
     
+    
     // Ensure last argument is terminated
     if (in_word && i < LINE_SIZE) {
         input[i] = '\0';
@@ -328,6 +329,10 @@ void execute_command(char *input) {
     else if (strcmp(args[0], "ifconfig") == 0) {
         cmd_ifconfig();
     }
+
+    else if (strcmp(args[0], "memtest") == 0) {
+        memory_test();
+    }
     else if (strcmp(args[0], "arp") == 0) {
         cmd_arp(argc, args);
     }
@@ -372,6 +377,21 @@ void execute_command(char *input) {
     else {
         print("Unknown command: "); print(args[0]); print("\n");
     }
+}
+void memory_test() {
+    print("Memory allocation test:\n");
+
+    void *a = kmalloc(1024);
+    void *b = kmalloc(4096);
+    void *c = kmalloc(16384);
+
+    if (a && b && c) {
+        print("Allocated: 21 KB\n");
+    } else {
+        print("Allocation failed\n");
+    }
+
+    print_memory_info();
 }
 
 void kmain(unsigned int magic, unsigned int *mb_info) {
