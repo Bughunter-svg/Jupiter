@@ -26,9 +26,22 @@ void check_network_status();
 void execute_command(char *input);
 
 void print_memory_info() {
-    print("Memory: 64MB total (simulated)\n");
-    print("Free: 56MB\n");
-    print("Used: 8MB\n");
+    size_t total = mem_get_total();
+    size_t used = mem_get_used();
+    size_t free = mem_get_free();
+
+    print("Memory Information:\n");
+    print("Total: ");
+    print_hex((unsigned int)total);
+    print(" bytes\n");
+
+    print("Used: ");
+    print_hex((unsigned int)used);
+    print(" bytes\n");
+
+    print("Free: ");
+    print_hex((unsigned int)free);
+    print(" bytes\n");
 }
 
 // Simulate interrupts manually for testing
@@ -381,6 +394,8 @@ void kmain(unsigned int magic, unsigned int *mb_info) {
     print("Boot #"); print_hex(boot_count); print("\n");
     
     // Initialize systems
+    mem_init();
+    mem_detect_multiboot(mb_info);
     fs_init();
     init_scheduler();
     init_interrupts();
