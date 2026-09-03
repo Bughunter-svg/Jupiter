@@ -7,11 +7,13 @@ typedef struct block_header {
     struct block_header *next;
 } block_header_t;
 
+extern char kernel_end;
+
 static block_header_t *free_list = (block_header_t *)0;
 static size_t heap_used = 0;
 static size_t total_ram = 0;
-static uint8_t *heap_start = (uint8_t *)HEAP_START;
-static uint8_t *heap_end = (uint8_t *)HEAP_START;
+static uint8_t *heap_start = (uint8_t *)0;
+static uint8_t *heap_end = (uint8_t *)0;
 
 static size_t align_size(size_t size) {
     return (size + 7) & ~7U;
@@ -22,10 +24,11 @@ static size_t header_size(void) {
 }
 
 void mem_init(void) {
-    heap_start = (uint8_t *)HEAP_START;
+    heap_start = (uint8_t *)align_size((size_t)&kernel_end);
     heap_end = heap_start;
     heap_used = 0;
     free_list = (block_header_t *)0;
+
     print("Memory Manager Initialized\n");
 }
 
@@ -39,6 +42,9 @@ void mem_set_total(size_t total) {
         total_ram = 0x10000000U;
 
     heap_end = (uint8_t *)total_ram;
+
+    if (heap_start >= heap_end)
+        heap_start = heap_end;
 }
 
 void *kmalloc(size_t size) {
