@@ -255,8 +255,9 @@ void execute_command(char *input) {
         print_memory_info();
     }
     else if (strcmp(args[0], "create") == 0 && argc > 1) {
-        fs_create(args[1], "");
-        launch_editor(args[1]);
+        if(fs_create(args[1], "")){
+            launch_editor(args[1]);
+        }
     }
     else if (strcmp(args[0], "read") == 0 && argc > 1) {
         const char* content = fs_read(args[1]);
