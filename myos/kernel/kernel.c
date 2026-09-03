@@ -57,9 +57,15 @@ void manual_timer_test() {
 }
 
 void test_process() {
-    while(1) {
-        print("Background process running! \n");
-        for(int i=0; i<1000000; i++) asm volatile("pause");
+    print(">>> PID 1 STARTED <<<\n");
+
+    for (volatile int i = 0; i < 5000000; i++)
+        asm volatile("pause");
+
+    print(">>> PID 1 FINISHED <<<\n");
+
+    while (1) {
+        asm volatile("hlt");
     }
 }
 
