@@ -58,33 +58,29 @@ int get_key(void) {
         return 0;
     }
 
-    if (scancode & 0x80)
-        return 0;
-
     if (scancode == 0xE0) {
         while (!(inb(STATUS_PORT) & 0x01))
             ;
 
         uint8_t ext_scancode = inb(DATA_PORT);
 
-        if (!(ext_scancode & 0x80)) {
-            switch (ext_scancode) {
-                case 0x48:
-                    return KEY_UP;
+        if (ext_scancode == 0x48)
+            return KEY_UP;
 
-                case 0x50:
-                    return KEY_DOWN;
+        if (ext_scancode == 0x50)
+            return KEY_DOWN;
 
-                case 0x4B:
-                    return KEY_LEFT;
+        if (ext_scancode == 0x4B)
+            return KEY_LEFT;
 
-                case 0x4D:
-                    return KEY_RIGHT;
-            }
-        }
+        if (ext_scancode == 0x4D)
+            return KEY_RIGHT;
 
         return 0;
     }
+
+    if (scancode & 0x80)
+        return 0;
 
     if (ctrl_pressed) {
         if (scancode == 0x1F)
