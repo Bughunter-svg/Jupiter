@@ -78,3 +78,20 @@ int memcmp(const void *s1, const void *s2, size_t n) {
     }
     return 0;
 }
+void mem_detect_multiboot(unsigned int *mb_info) {
+    if (!mb_info)
+        return;
+
+    unsigned int flags = mb_info[0];
+
+    if (flags & (1 << 0)) {
+        unsigned int mem_lower = mb_info[1];
+        unsigned int mem_upper = mb_info[2];
+
+        size_t total = ((size_t)mem_upper + 1024) * 1024;
+        mem_set_total(total);
+        return;
+    }
+
+    mem_set_total(0);
+}
