@@ -5,8 +5,7 @@
 #include <stddef.h>
 
 #define HEAP_START 0x100000U
-#define HEAP_SIZE  0x400000U
-#define HEAP_END   (HEAP_START + HEAP_SIZE)
+#define MIN_HEAP_SIZE 0x400000U
 
 void mem_init(void);
 void mem_set_total(size_t total);
