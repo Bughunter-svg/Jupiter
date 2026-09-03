@@ -10,6 +10,7 @@ typedef struct block_header {
 extern char kernel_end;
 
 static block_header_t *free_list = (block_header_t *)0;
+static uint8_t *heap_base = (uint8_t *)0;
 static size_t heap_used = 0;
 static size_t total_ram = 0;
 static uint8_t *heap_start = (uint8_t *)0;
@@ -25,6 +26,7 @@ static size_t header_size(void) {
 
 void mem_init(void) {
     heap_start = (uint8_t *)align_size((size_t)&kernel_end);
+    heap_start = heap_base;
     heap_end = heap_start;
     heap_used = 0;
     free_list = (block_header_t *)0;
@@ -99,7 +101,7 @@ void kfree(void *ptr) {
 
     size_t hdr = header_size();
 
-    if ((uint8_t *)ptr < (uint8_t *)HEAP_START + hdr)
+    if ((uint8_t *)ptr < heap_base + hdr)
         return;
 
     if ((uint8_t *)ptr >= heap_start)
