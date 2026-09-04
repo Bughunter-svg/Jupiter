@@ -1,0 +1,306 @@
+#include "keyboard.h"
+#include "screen.h"
+#include "ports.h"
+#include <stdint.h>
+
+#define DATA_PORT 0x60
+#define STATUS_PORT 0x64
+
+#define HISTORY_SIZE 10
+
+static const char scancode_map[] = {
+    0,0,'1','2','3','4','5','6','7','8','9','0','-','=','\b',
+    '\t','q','w','e','r','t','y','u','i','o','p','[',']','\n',
+    0,'a','s','d','f','g','h','j','k','l',';','\'','`',0,
+    '\\','z','x','c','v','b','n','m',',','.','/',0,'*',0,' ',0
+};
+
+static const char shifted_scancode_map[] = {
+    0,0,'!','@','#','$','%','^','&','*','(',')','_','+','\b',
+    '\t','Q','W','E','R','T','Y','U','I','O','P','{','}','\n',
+    0,'A','S','D','F','G','H','J','K','L',':','"','~',0,
+    '|','Z','X','C','V','B','N','M','<','>','?',0,'*',0,' ',0
+};
+
+static char history[HISTORY_SIZE][128];
+static int history_count = 0;
+static int shift_pressed = 0;
+static int ctrl_pressed = 0;
+
+char keyboard_buffer[256] = {0};
+int keyboard_buffer_size = 0;
+
+int get_key(void) {
+    uint8_t scancode;
+
+    while (!(inb(STATUS_PORT) & 0x01))
+        ;
+
+    scancode = inb(DATA_PORT);
+
+    if (scancode == 0x1D) {
+        ctrl_pressed = 1;
+        return 0;
+    }
+
+    if (scancode == 0x9D) {
+        ctrl_pressed = 0;
+        return 0;
+    }
+
+    if (scancode == 0x2A || scancode == 0x36) {
+        shift_pressed = 1;
+        return 0;
+    }
+
+    if (scancode == 0xAA || scancode == 0xB6) {
+        shift_pressed = 0;
+        return 0;
+    }
+
+    if (scancode == 0xE0) {
+        while (!(inb(STATUS_PORT) & 0x01))
+            ;
+
+        uint8_t ext_scancode = inb(DATA_PORT);
+
+        if (ext_scancode == 0x48)
+            return KEY_UP;
+
+        if (ext_scancode == 0x50)
+            return KEY_DOWN;
+
+        if (ext_scancode == 0x4B)
+            return KEY_LEFT;
+
+        if (ext_scancode == 0x4D)
+            return KEY_RIGHT;
+
+        return 0;
+    }
+
+    if (scancode & 0x80)
+        return 0;
+
+    if (ctrl_pressed) {
+        if (scancode == 0x1F)
+            return KEY_CTRL_S;
+
+        if (scancode == 0x10)
+            return KEY_CTRL_Q;
+    }
+
+    if (scancode < sizeof(scancode_map)) {
+        if (shift_pressed)
+            return shifted_scancode_map[scancode];
+
+        return scancode_map[scancode];
+    }
+
+    return 0;
+}
+
+void get_line(char *buffer, int size) {
+    int i = 0;
+    int c;
+    int temp_index = history_count;
+
+    while (1) {
+        c = get_key();
+
+        if (!c)
+            continue;
+
+        if (c == '\r' || c == '\n') {
+            buffer[i] = 0;
+            print("\n");
+
+            if (i > 0) {
+                if (history_count < HISTORY_SIZE)
+                    history_count++;
+
+                int idx = (history_count - 1) % HISTORY_SIZE;
+
+                for (int j = 0; j < i; j++)
+                    history[idx][j] = buffer[j];
+
+                history[idx][i] = 0;
+            }
+
+            temp_index = history_count;
+            break;
+        }
+
+        if (c == '\b') {
+            if (i > 0) {
+                i--;
+                print_char('\b');
+                print_char(' ');
+                print_char('\b');
+            }
+
+            continue;
+        }
+
+        if (c == KEY_UP) {
+            if (history_count == 0)
+                continue;
+
+            temp_index--;
+
+            if (temp_index < 0)
+                temp_index = 0;
+
+            while (i > 0) {
+                print_char('\b');
+                print_char(' ');
+                print_char('\b');
+                i--;
+            }
+
+            int j = 0;
+
+            while (history[temp_index][j] &&
+                   j < size - 1) {
+                buffer[j] = history[temp_index][j];
+                print_char(buffer[j]);
+                j++;
+            }
+
+            i = j;
+            continue;
+        }
+
+        if (c == KEY_DOWN) {
+            if (history_count == 0)
+                continue;
+
+            temp_index++;
+
+            if (temp_index >= history_count) {
+                while (i > 0) {
+                    print_char('\b');
+                    print_char(' ');
+                    print_char('\b');
+                    i--;
+                }
+
+                temp_index = history_count;
+                continue;
+            }
+
+            while (i > 0) {
+                print_char('\b');
+                print_char(' ');
+                print_char('\b');
+                i--;
+            }
+
+            int j = 0;
+
+            while (history[temp_index][j] &&
+                   j < size - 1) {
+                buffer[j] = history[temp_index][j];
+                print_char(buffer[j]);
+                j++;
+            }
+
+            i = j;
+            continue;
+        }
+
+        if (i < size - 1 &&
+            c >= 32 &&
+            c <= 126) {
+            buffer[i++] = (char)c;
+            print_char((char)c);
+        }
+    }
+}
+
+void get_init(void) {
+    history_count = 0;
+    shift_pressed = 0;
+    ctrl_pressed = 0;
+}
+
+int key_available(void) {
+    return keyboard_buffer_size > 0;
+}
+
+void keyboard_handler(void) {
+    uint8_t scancode = inb(DATA_PORT);
+
+    if (scancode == 0x1D) {
+        ctrl_pressed = 1;
+        return;
+    }
+
+    if (scancode == 0x9D) {
+        ctrl_pressed = 0;
+        return;
+    }
+
+    if (scancode == 0x2A || scancode == 0x36) {
+        shift_pressed = 1;
+        return;
+    }
+
+    if (scancode == 0xAA || scancode == 0xB6) {
+        shift_pressed = 0;
+        return;
+    }
+
+    if (scancode & 0x80)
+        return;
+
+    if (scancode == 0xE0)
+        return;
+
+    if (ctrl_pressed) {
+        if (scancode == 0x1F) {
+            if (keyboard_buffer_size < sizeof(keyboard_buffer) - 1)
+                keyboard_buffer[keyboard_buffer_size++] = KEY_CTRL_S;
+
+            return;
+        }
+
+        if (scancode == 0x10) {
+            if (keyboard_buffer_size < sizeof(keyboard_buffer) - 1)
+                keyboard_buffer[keyboard_buffer_size++] = KEY_CTRL_Q;
+
+            return;
+        }
+    }
+
+    if (scancode < sizeof(scancode_map)) {
+        char key = shift_pressed
+            ? shifted_scancode_map[scancode]
+            : scancode_map[scancode];
+
+        if (key &&
+            keyboard_buffer_size < sizeof(keyboard_buffer) - 1) {
+            keyboard_buffer[keyboard_buffer_size++] = key;
+        }
+    }
+}
+
+char keyboard_pop(void) {
+    if (keyboard_buffer_size > 0) {
+        char key = keyboard_buffer[0];
+
+        for (int i = 0; i < keyboard_buffer_size - 1; i++)
+            keyboard_buffer[i] = keyboard_buffer[i + 1];
+
+        keyboard_buffer_size--;
+
+        return key;
+    }
+
+    return 0;
+}
+
+void init_keyboard(void) {
+    keyboard_buffer_size = 0;
+    get_init();
+}
