@@ -69,10 +69,10 @@ iso: kernel.bin
 	mkdir -p isodir/boot/grub
 	cp kernel.bin isodir/boot/kernel.bin
 	cp boot/grub.cfg isodir/boot/grub/grub.cfg
-	grub-mkrescue -o myos.iso isodir
+	grub-mkrescue -o JupiterOS-v0.1.iso isodir
 
 run: iso
-	qemu-system-i386 -cdrom myos.iso -net nic,model=ne2k_isa,macaddr=52:54:00:12:34:56 -net user
+	qemu-system-i386 -cdrom JupiterOS-v0.1.iso -net nic,model=ne2k_isa,macaddr=52:54:00:12:34:56 -net user
 
 clean:
 	rm -rf boot/*.o kernel/*.o kernel.bin isodir myos.iso
