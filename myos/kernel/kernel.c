@@ -63,6 +63,7 @@ void test_process() {
         asm volatile("pause");
 
     print(">>> PID 1 FINISHED <<<\n");
+    print(">>> PID 1 RETURNING NOW <<<\n");
 }
 
 void test_network_detection() {
