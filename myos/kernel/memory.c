@@ -392,6 +392,9 @@ void pmm_init(unsigned int *mb_info) {
     );
 
     pmm_total_pages = (size_t)((highest_address + PAGE_SIZE - 1) / PAGE_SIZE);
+    print("PMM DEBUG total=");
+    print_int((int)pmm_total_pages);
+    print("\n");
     if (pmm_total_pages > MAX_PHYSICAL_PAGES)
         pmm_total_pages = MAX_PHYSICAL_PAGES;
 
