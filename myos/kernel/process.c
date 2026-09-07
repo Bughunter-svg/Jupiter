@@ -93,12 +93,19 @@ int create_process(void (*entry)(void), const char *name, int priority) {
         process_count--;
         return -1;
     }
-
     uint32_t stack_top = (uint32_t)stack_mem + STACK_SIZE;
-
+    stack_top &= ~0xFUL;
     stack_top -= sizeof(uint32_t);
     *((uint32_t *)stack_top) = (uint32_t)process_trampoline;
-
+    stack_top -= sizeof(uint32_t);
+    *((uint32_t *)stack_top) = 0;
+    stack_top -= sizeof(uint32_t);
+    *((uint32_t *)stack_top) = 0;
+    stack_top -= sizeof(uint32_t);
+    *((uint32_t *)stack_top) = 0;
+    stack_top -= sizeof(uint32_t);
+    *((uint32_t *)stack_top) = 0;
+    
     pcb->eax = 0;
     pcb->ebx = 0;
     pcb->ecx = 0;
