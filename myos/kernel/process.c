@@ -55,16 +55,9 @@ void process_trampoline(void) {
 
     entry();
 
-    print("\n[TRAMPOLINE] Process returned.\n");
-    print("[TRAMPOLINE] Calling process_exit...\n");
+    print("\n>>> TRAMPOLINE: ENTRY RETURNED <<<\n");
 
     process_exit();
-
-    print("[TRAMPOLINE] ERROR: process_exit returned.\n");
-
-    while (1) {
-        asm volatile("hlt");
-    }
 }
 
 void init_scheduler(void) {
