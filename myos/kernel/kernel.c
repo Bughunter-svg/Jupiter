@@ -12,6 +12,7 @@
 #include "network.h"
 #include "login.h"
 #include <stddef.h>
+#include "memory.h"
 #include "netcmds.h"
 #define LINE_SIZE 128
 
@@ -233,7 +234,7 @@ void execute_command(char *input) {
         print("| [FILE]    create, read, delete, ls         |\n");
         print("| [FILE]    append, info, cp, edit           |\n");
         print("| [SYSTEM]  clear, echo, meminfo, ps, calc   |\n");
-        print("| [SYSTEM]  run, time, timer, sleep          |\n");
+        print("| [SYSTEM]  run, time, timer, sleep,memmap   |\n");
         print("| [INFO]    cpuinfo, osinfo, status, df      |\n");
         print("| [NETWORK] ping, ifconfig, arp              |\n");
         print("| [NETWORK] net, net test, net send          |\n");
@@ -256,6 +257,9 @@ void execute_command(char *input) {
     }
     else if (strcmp(args[0], "meminfo") == 0) {
         print_memory_info();
+    }
+    else if (strcmp(args[0], "memmap") == 0) {
+        mem_print_map();
     }
     else if (strcmp(args[0], "create") == 0 && argc > 1) {
         if(fs_create(args[1], "")){
