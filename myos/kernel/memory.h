@@ -6,6 +6,16 @@
 
 #define HEAP_START 0x100000U
 #define MIN_HEAP_SIZE 0x400000U
+#define MAX_MEMORY_REGIONS 32
+
+typedef struct {
+    uint64_t base;
+    uint64_t length;
+    uint32_t type;
+} MemoryRegion;
+
+void mem_print_map(void);
+size_t mem_get_usable_ram(void);
 
 void mem_init(void);
 void mem_set_total(size_t total);
