@@ -344,6 +344,7 @@ void pmm_init(unsigned int *mb_info) {
      *
      * Then explicitly mark Multiboot type-1 regions as FREE.
      */
+    uint64_t highest_address = 0;
     memset(pmm_bitmap, 0xFF, sizeof(pmm_bitmap));
 
     pmm_total_pages = 0;
@@ -363,16 +364,13 @@ void pmm_init(unsigned int *mb_info) {
     uint32_t offset = 0;
 
     while (offset < mmap_length) {
-        MultibootMemoryEntry *entry =
-            (MultibootMemoryEntry *)(mmap_addr + offset);
-
+        MultibootMemoryEntry *entry = (MultibootMemoryEntry *)(mmap_addr + offset);
+        uint64_t end = entry->base + entry->length;
+        if (end > highest_address)
+             highest_address = end;
         if (entry->type == 1) {
-            pmm_mark_usable_region(
-                entry->base,
-                entry->length
-            );
+            pmm_mark_usable_region(entry->base, entry->length);
         }
-
         offset += entry->size + sizeof(entry->size);
     }
 
@@ -393,15 +391,9 @@ void pmm_init(unsigned int *mb_info) {
         (uint64_t)(uint32_t)&kernel_end - 0x100000
     );
 
-    /*
-     * Calculate the highest page represented by the bitmap.
-     */
-    for (size_t page = MAX_PHYSICAL_PAGES; page > 0; page--) {
-        if (!pmm_is_free(page - 1)) {
-            pmm_total_pages = page;
-            break;
-        }
-    }
+    pmm_total_pages = (size_t)((highest_address + PAGE_SIZE - 1) / PAGE_SIZE);
+    if (pmm_total_pages > MAX_PHYSICAL_PAGES)
+        pmm_total_pages = MAX_PHYSICAL_PAGES;
 
     print("Physical Memory Manager initialized.\n");
     print("Total pages: ");
