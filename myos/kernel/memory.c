@@ -173,12 +173,70 @@ int memcmp(const void *s1, const void *s2, size_t n) {
     return 0;
 }
 
+#define MULTIBOOT_FLAG_MEM_MAP  (1 << 6)
+
+typedef struct {
+    uint32_t size;
+    uint64_t base;
+    uint64_t length;
+    uint32_t type;
+} __attribute__((packed)) MultibootMemoryEntry;
+
+static MemoryRegion memory_map[MAX_MEMORY_REGIONS];
+static size_t memory_region_count = 0;
+static size_t usable_ram = 0;
+
 void mem_detect_multiboot(unsigned int *mb_info) {
     if (!mb_info)
         return;
 
     unsigned int flags = mb_info[0];
 
+    memory_region_count = 0;
+    usable_ram = 0;
+
+    /*
+     * Multiboot flag 6:
+     * BIOS/bootloader memory map is available.
+     */
+    if (flags & MULTIBOOT_FLAG_MEM_MAP) {
+        uint32_t mmap_length = mb_info[11];
+        uint32_t mmap_addr = mb_info[12];
+
+        uint32_t offset = 0;
+
+        while (offset < mmap_length &&
+               memory_region_count < MAX_MEMORY_REGIONS) {
+
+            MultibootMemoryEntry *entry =
+                (MultibootMemoryEntry *)(mmap_addr + offset);
+
+            memory_map[memory_region_count].base = entry->base;
+            memory_map[memory_region_count].length = entry->length;
+            memory_map[memory_region_count].type = entry->type;
+
+            if (entry->type == 1) {
+                usable_ram += (size_t)entry->length;
+            }
+
+            memory_region_count++;
+
+            offset += entry->size + sizeof(entry->size);
+        }
+
+        /*
+         * Keep total RAM as the amount reported by the memory map.
+         * The old 256 MiB artificial cap will be removed when the
+         * physical memory manager is implemented.
+         */
+        mem_set_total(usable_ram);
+
+        return;
+    }
+
+    /*
+     * Fall back to the basic Multiboot memory fields.
+     */
     if (flags & (1 << 0)) {
         unsigned int mem_upper = mb_info[2];
         size_t total = ((size_t)mem_upper + 1024) * 1024;
@@ -189,3 +247,38 @@ void mem_detect_multiboot(unsigned int *mb_info) {
 
     mem_set_total(0);
 }
+
+void mem_print_map(void) {
+    print("\nJupiterOS Memory Map\n");
+    print("====================\n");
+
+    for (size_t i = 0; i < memory_region_count; i++) {
+        print("Region ");
+        print_int((int)i);
+        print(": ");
+
+        print("Base=");
+        print_hex((unsigned int)memory_map[i].base);
+
+        print(" Length=");
+        print_hex((unsigned int)memory_map[i].length);
+
+        print(" Type=");
+
+        if (memory_map[i].type == 1)
+            print("USABLE");
+        else
+            print("RESERVED");
+
+        print("\n");
+    }
+
+    print("Usable RAM: ");
+    print_int((int)(usable_ram / (1024 * 1024)));
+    print(" MB\n");
+}
+
+size_t mem_get_usable_ram(void) {
+    return usable_ram;
+}
+
