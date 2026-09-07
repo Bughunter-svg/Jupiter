@@ -25,7 +25,7 @@ static size_t header_size(void) {
 }
 
 void mem_init(void) {
-    heap_start = (uint8_t *)align_size((size_t)&kernel_end);
+    heap_base = (uint8_t *)align_size((size_t)&kernel_end);
     heap_start = heap_base;
     heap_end = heap_start;
     heap_used = 0;
@@ -39,9 +39,6 @@ void mem_set_total(size_t total) {
 
     if (total_ram < MIN_HEAP_SIZE)
         total_ram = MIN_HEAP_SIZE;
-
-    if (total_ram > 0x10000000U)
-        total_ram = 0x10000000U;
 
     heap_end = (uint8_t *)total_ram;
 
