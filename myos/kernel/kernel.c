@@ -316,6 +316,9 @@ void execute_command(char *input) {
         }
         fs_append(args[1], content_start);
     }
+    else if (strcmp(args[0], "pmm") == 0) {
+        pmm_print_stats();
+    }
     else if (strcmp(args[0], "info") == 0 && argc > 1) {
         fs_info(args[1]);
     }
@@ -430,6 +433,7 @@ void kmain(unsigned int magic, unsigned int *mb_info) {
     // Initialize systems
     mem_init();
     mem_detect_multiboot(mb_info);
+    pmm_init(mb_info);
     fs_init();
     init_scheduler();
     init_interrupts();
