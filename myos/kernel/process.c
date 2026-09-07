@@ -18,6 +18,7 @@ static void process_exit(void) {
     print(" exited.\n");
 
     pcb->state = PROCESS_ZOMBIE;
+    print("[EXIT] Looking for next process...\n");
 
     while (1) {
         int next = 0;
@@ -33,9 +34,13 @@ static void process_exit(void) {
             ProcessControlBlock *cur = pcb;
             ProcessControlBlock *nxt = &pcbs[next];
 
+            print("[EXIT] Switching back to PID ");
+            print_int(next);
+            print("\n");
+            
             nxt->state = PROCESS_RUNNING;
             current_pid = next;
-
+            
             switch_task_asm(cur, nxt);
         }
 
