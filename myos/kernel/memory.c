@@ -279,3 +279,216 @@ size_t mem_get_usable_ram(void) {
     return usable_ram;
 }
 
+#define MULTIBOOT_FLAG_MEM_MAP (1 << 6)
+
+static uint8_t pmm_bitmap[BITMAP_SIZE];
+
+static size_t pmm_total_pages = 0;
+static size_t pmm_free_pages = 0;
+
+static void pmm_set_used(size_t page) {
+    pmm_bitmap[page / 8] |= (uint8_t)(1U << (page % 8));
+}
+
+static void pmm_set_free(size_t page) {
+    pmm_bitmap[page / 8] &= (uint8_t)~(1U << (page % 8));
+}
+
+static int pmm_is_free(size_t page) {
+    return !(pmm_bitmap[page / 8] & (1U << (page % 8)));
+}
+
+static void pmm_reserve_region(uint64_t base, uint64_t length) {
+    uint64_t start = base & ~(uint64_t)(PAGE_SIZE - 1);
+    uint64_t end = (base + length + PAGE_SIZE - 1) &
+                   ~(uint64_t)(PAGE_SIZE - 1);
+
+    for (uint64_t addr = start; addr < end; addr += PAGE_SIZE) {
+        size_t page = (size_t)(addr / PAGE_SIZE);
+
+        if (page >= MAX_PHYSICAL_PAGES)
+            break;
+
+        if (pmm_is_free(page)) {
+            pmm_set_used(page);
+
+            if (pmm_free_pages > 0)
+                pmm_free_pages--;
+        }
+    }
+}
+
+static void pmm_mark_usable_region(uint64_t base, uint64_t length) {
+    uint64_t start = (base + PAGE_SIZE - 1) &
+                     ~(uint64_t)(PAGE_SIZE - 1);
+
+    uint64_t end = (base + length) &
+                   ~(uint64_t)(PAGE_SIZE - 1);
+
+    for (uint64_t addr = start; addr < end; addr += PAGE_SIZE) {
+        size_t page = (size_t)(addr / PAGE_SIZE);
+
+        if (page >= MAX_PHYSICAL_PAGES)
+            break;
+
+        if (!pmm_is_free(page)) {
+            pmm_set_free(page);
+            pmm_free_pages++;
+        }
+    }
+}
+
+void pmm_init(unsigned int *mb_info) {
+    /*
+     * Start with every physical page marked USED.
+     *
+     * Then explicitly mark Multiboot type-1 regions as FREE.
+     */
+    memset(pmm_bitmap, 0xFF, sizeof(pmm_bitmap));
+
+    pmm_total_pages = 0;
+    pmm_free_pages = 0;
+
+    if (!mb_info)
+        return;
+
+    unsigned int flags = mb_info[0];
+
+    if (!(flags & MULTIBOOT_FLAG_MEM_MAP))
+        return;
+
+    uint32_t mmap_length = mb_info[11];
+    uint32_t mmap_addr = mb_info[12];
+
+    uint32_t offset = 0;
+
+    while (offset < mmap_length) {
+        MultibootMemoryEntry *entry =
+            (MultibootMemoryEntry *)(mmap_addr + offset);
+
+        if (entry->type == 1) {
+            pmm_mark_usable_region(
+                entry->base,
+                entry->length
+            );
+        }
+
+        offset += entry->size + sizeof(entry->size);
+    }
+
+    /*
+     * Reserve the first 1 MiB.
+     *
+     * We don't want the PMM handing out low-memory pages.
+     */
+    pmm_reserve_region(0, 0x100000);
+
+    /*
+     * Reserve the kernel itself.
+     */
+    extern char kernel_end;
+
+    pmm_reserve_region(
+        0x100000,
+        (uint64_t)&kernel_end - 0x100000
+    );
+
+    /*
+     * Calculate the highest page represented by the bitmap.
+     */
+    for (size_t page = MAX_PHYSICAL_PAGES; page > 0; page--) {
+        if (!pmm_is_free(page - 1)) {
+            pmm_total_pages = page;
+            break;
+        }
+    }
+
+    print("Physical Memory Manager initialized.\n");
+    print("Total pages: ");
+    print_int((int)pmm_total_pages);
+    print("\n");
+
+    print("Free pages: ");
+    print_int((int)pmm_free_pages);
+    print("\n");
+}
+
+void *pmm_alloc_page(void) {
+    for (size_t page = 0; page < pmm_total_pages; page++) {
+        if (pmm_is_free(page)) {
+            pmm_set_used(page);
+
+            if (pmm_free_pages > 0)
+                pmm_free_pages--;
+
+            return (void *)(page * PAGE_SIZE);
+        }
+    }
+
+    print("PMM: OUT OF PHYSICAL MEMORY\n");
+    return (void *)0;
+}
+
+void pmm_free_page(void *page_addr) {
+    uint32_t addr = (uint32_t)page_addr;
+
+    if (addr % PAGE_SIZE != 0)
+        return;
+
+    size_t page = addr / PAGE_SIZE;
+
+    if (page >= pmm_total_pages)
+        return;
+
+    if (pmm_is_free(page))
+        return;
+
+    /*
+     * Don't allow low memory or kernel pages to be freed.
+     *
+     * This is deliberately conservative for now.
+     */
+    if (addr < 0x100000)
+        return;
+
+    extern char kernel_end;
+
+    if (addr < (uint32_t)&kernel_end)
+        return;
+
+    pmm_set_free(page);
+    pmm_free_pages++;
+}
+
+size_t pmm_get_total_pages(void) {
+    return pmm_total_pages;
+}
+
+size_t pmm_get_free_pages(void) {
+    return pmm_free_pages;
+}
+
+void pmm_print_stats(void) {
+    print("\nPhysical Memory Manager\n");
+    print("=======================\n");
+
+    print("Total pages: ");
+    print_int((int)pmm_total_pages);
+    print("\n");
+
+    print("Free pages:  ");
+    print_int((int)pmm_free_pages);
+    print("\n");
+
+    print("Used pages:  ");
+    print_int((int)(pmm_total_pages - pmm_free_pages));
+    print("\n");
+
+    print("Page size:   ");
+    print_int(PAGE_SIZE);
+    print(" bytes\n");
+
+    print("Free RAM:    ");
+    print_int((int)((pmm_free_pages * PAGE_SIZE) / (1024 * 1024)));
+    print(" MB\n");
+}
