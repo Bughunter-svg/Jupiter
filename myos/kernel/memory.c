@@ -390,7 +390,7 @@ void pmm_init(unsigned int *mb_info) {
 
     pmm_reserve_region(
         0x100000,
-        (uint64_t)&kernel_end - 0x100000
+        (uint64_t)(uint32_t)&kernel_end - 0x100000
     );
 
     /*
