@@ -480,9 +480,9 @@ void kmain(unsigned int magic, unsigned int *mb_info) {
     print("Interrupts: DISABLED (Safe Mode)\n");
     
     // Test network hardware
-    print("Testing network hardware...\n");
-    test_network_detection();
-    test_mac_address();
+    //fprint("Testing network hardware...\n");
+    //test_network_detection();
+    //test_mac_address();
     
     // Initialize network
     network_init();
