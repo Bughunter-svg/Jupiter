@@ -3,8 +3,7 @@ CC = gcc
 LD = ld
 
 # Fixed CFLAGS - removed conflicting options
-CFLAGS = -m32 -ffreestanding -nostdlib -fno-exceptions -fno-pic -Wall -Wextra -I.
-
+CFLAGS = -m32 -march=i386 -mno-sse -mno-sse2 -mno-mmx -ffreestanding -nostdlib -fno-exceptions -fno-pic -fno-stack-protector -Wall -Wextra -I.
 # All object files
 OBJS = boot/boot.o kernel/kernel.o kernel/screen.o kernel/ports.o kernel/keyboard.o \
        kernel/string.o kernel/filesystem.o kernel/process.o kernel/timer.o \

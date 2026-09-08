@@ -9,6 +9,7 @@ typedef struct block_header {
 
 extern char kernel_end;
 
+static void print_hex64(uint64_t value);
 static block_header_t *free_list = (block_header_t *)0;
 static uint8_t *heap_base = (uint8_t *)0;
 static size_t heap_used = 0;
@@ -255,10 +256,10 @@ void mem_print_map(void) {
         print(": ");
 
         print("Base=");
-        print_hex((unsigned int)memory_map[i].base);
+        print_hex64(memory_map[i].base);
 
         print(" Length=");
-        print_hex((unsigned int)memory_map[i].length);
+        print_hex64(memory_map[i].length);
 
         print(" Type=");
 
@@ -296,6 +297,11 @@ static void pmm_set_free(size_t page) {
 
 static int pmm_is_free(size_t page) {
     return !(pmm_bitmap[page / 8] & (1U << (page % 8)));
+}
+
+static void print_hex64(uint64_t value) {
+    print_hex((uint32_t)(value >> 32));
+    print_hex((uint32_t)value);
 }
 
 static void pmm_reserve_region(uint64_t base, uint64_t length) {
@@ -344,7 +350,7 @@ void pmm_init(unsigned int *mb_info) {
      *
      * Then explicitly mark Multiboot type-1 regions as FREE.
      */
-    uint64_t highest_address = 0;
+    uint64_t highest_usable_address = 0;
     memset(pmm_bitmap, 0xFF, sizeof(pmm_bitmap));
 
     pmm_total_pages = 0;
@@ -365,9 +371,10 @@ void pmm_init(unsigned int *mb_info) {
 
     while (offset < mmap_length) {
         MultibootMemoryEntry *entry = (MultibootMemoryEntry *)(mmap_addr + offset);
-        uint64_t end = entry->base + entry->length;
-        if (end > highest_address)
-             highest_address = end;
+       	uint64_t end = entry->base + entry->length;
+	if (entry->type == 1 && end > highest_usable_address)
+		highest_usable_address = end;
+
         if (entry->type == 1) {
             pmm_mark_usable_region(entry->base, entry->length);
         }
@@ -391,7 +398,7 @@ void pmm_init(unsigned int *mb_info) {
         (uint64_t)(uint32_t)&kernel_end - 0x100000
     );
 
-    pmm_total_pages = (size_t)((highest_address + PAGE_SIZE - 1) / PAGE_SIZE);
+    pmm_total_pages = (size_t)((highest_usable_address + PAGE_SIZE - 1) / PAGE_SIZE);
     print("PMM DEBUG total=");
     print_int((int)pmm_total_pages);
     print("\n");

@@ -24,6 +24,7 @@ void test_network_detection();
 void test_mac_address();
 void test_network_packets();
 void check_network_status();
+void memory_test(void);
 void execute_command(char *input);
 
 void print_memory_info() {
@@ -230,17 +231,18 @@ void execute_command(char *input) {
 
     // Now use args[0] as command, args[1] as first argument, etc.
     if (strcmp(args[0], "help") == 0) {
-        print("=============== JUPITER OS HELP ===============\n");
-        print("| [FILE]    create, read, delete, ls         |\n");
-        print("| [FILE]    append, info, cp, edit           |\n");
-        print("| [SYSTEM]  clear, echo, meminfo, ps, calc   |\n");
-        print("| [SYSTEM]  run, time, timer, sleep,memmap   |\n");
-        print("| [INFO]    cpuinfo, osinfo, status, df      |\n");
-        print("| [NETWORK] ping, ifconfig, arp              |\n");
-        print("| [NETWORK] net, net test, net send          |\n");
-        print("| [USER]    whoami, logout                   |\n");
-        print("| [HELP]    help                             |\n");
-        print("==============================================\n");
+        print("=============== JUPITER OS HELP =================\n");
+        print("| [FILE]    create, read, delete, ls         	|\n");
+        print("| [FILE]    append, info, cp, edit           	|\n");
+        print("| [SYSTEM]  clear, echo, meminfo, ps, calc   	|\n");
+	print("| [MEMORY]   memtest, pmtest, pmm             	|\n");
+        print("| [SYSTEM]  run, time, timer, sleep,memmap   	|\n");
+        print("| [INFO]    cpuinfo, osinfo, status, df      	|\n");
+        print("| [NETWORK] ping, ifconfig, arp              	|\n");
+        print("| [NETWORK] net, net test, net send          	|\n");
+        print("| [USER]    whoami, logout                   	|\n");
+        print("| [HELP]    help                             	|\n");
+        print("=================================================\n");
     }
     else if (strcmp(args[0], "clear") == 0) {
         clear_screen();
@@ -349,6 +351,36 @@ void execute_command(char *input) {
 
     else if (strcmp(args[0], "memtest") == 0) {
         memory_test();
+    }
+    else if (strcmp(args[0], "pmtest") == 0) {
+	size_t before = pmm_get_free_pages();
+	void *page1 = pmm_alloc_page();
+	void *page2 = pmm_alloc_page();
+	print("\nPMM Allocation Test\n");
+	print("===================\n");
+
+	print("Free before: ");
+	print_int((int)before);
+	print("\n");
+	
+	print("Page 1: ");
+	print_hex((uint32_t)page1);
+	print("\n");
+	
+	print("Page 2: ");
+	print_hex((uint32_t)page2);
+	print("\n");
+	
+	print("Free after allocation: ");
+	print_int((int)pmm_get_free_pages());
+	print("\n");
+
+	pmm_free_page(page1);
+	pmm_free_page(page2);
+
+	print("Free after free: ");
+	print_int((int)pmm_get_free_pages());
+	print("\n");
     }
     else if (strcmp(args[0], "arp") == 0) {
         cmd_arp(argc, args);
