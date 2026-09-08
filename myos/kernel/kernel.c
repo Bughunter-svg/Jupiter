@@ -231,18 +231,18 @@ void execute_command(char *input) {
 
     // Now use args[0] as command, args[1] as first argument, etc.
     if (strcmp(args[0], "help") == 0) {
-        print("=============== JUPITER OS HELP =================\n");
-        print("| [FILE]    create, read, delete, ls         	|\n");
-        print("| [FILE]    append, info, cp, edit           	|\n");
-        print("| [SYSTEM]  clear, echo, meminfo, ps, calc   	|\n");
-	print("| [MEMORY]   memtest, pmtest, pmm             	|\n");
-        print("| [SYSTEM]  run, time, timer, sleep,memmap   	|\n");
-        print("| [INFO]    cpuinfo, osinfo, status, df      	|\n");
-        print("| [NETWORK] ping, ifconfig, arp              	|\n");
-        print("| [NETWORK] net, net test, net send          	|\n");
-        print("| [USER]    whoami, logout                   	|\n");
-        print("| [HELP]    help                             	|\n");
-        print("=================================================\n");
+        print("=============== JUPITER OS HELP =========================\n");
+        print("| [FILE]    create, read, delete, ls         		|\n");
+        print("| [FILE]    append, info, cp, edit           		|\n");
+        print("| [SYSTEM]  clear, echo, meminfo, ps, calc   		|\n");
+	print("| [MEMORY]   memtest, pmtest, pmm             		|\n");
+        print("| [SYSTEM]  run, time, timer, sleep,memmap, uptime   	|\n");
+        print("| [INFO]    cpuinfo, osinfo, status, df      		|\n");
+        print("| [NETWORK] ping, ifconfig, arp              		|\n");
+        print("| [NETWORK] net, net test, net send          		|\n");
+        print("| [USER]    whoami, logout                   		|\n");
+        print("| [HELP]    help                             		|\n");
+        print("=========================================================\n");
     }
     else if (strcmp(args[0], "clear") == 0) {
         clear_screen();
@@ -305,6 +305,26 @@ void execute_command(char *input) {
     }
     else if (strcmp(args[0], "timer") == 0) {
         print("Timer ticks: "); print_hex(get_ticks()); print("\n");
+    }
+
+    else if (strcmp(args[0], "uptime") == 0) {
+    	unsigned long ticks = get_ticks();
+    	unsigned long total_seconds = ticks / 100;
+
+    	unsigned long hours = total_seconds / 3600;
+    	unsigned long minutes = (total_seconds % 3600) / 60;
+    	unsigned long seconds = total_seconds % 60;
+
+    	print("JupiterOS uptime: ");
+
+    	print_int((int)hours);
+    	print("h ");
+	
+    	print_int((int)minutes);
+    	print("m ");
+
+    	print_int((int)seconds);
+    	print("s\n");
     }
     else if (strcmp(args[0], "append") == 0 && argc > 2) {
         // For append, manually build the content string
