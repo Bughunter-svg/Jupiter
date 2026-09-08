@@ -74,6 +74,6 @@ run: iso
 	qemu-system-i386 -cdrom JupiterOS-v0.1.iso -net nic,model=ne2k_isa,macaddr=52:54:00:12:34:56 -net user
 
 clean:
-	rm -rf boot/*.o kernel/*.o kernel.bin isodir myos.iso
+	rm -rf boot/*.o kernel/*.o kernel.bin isodir JupiterOS-v0.1.iso
 
 .PHONY: all clean run iso

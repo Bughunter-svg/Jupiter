@@ -397,11 +397,13 @@ void pmm_init(unsigned int *mb_info) {
         0x100000,
         (uint64_t)(uint32_t)&kernel_end - 0x100000
     );
+    /*
+     * Reserve the Multiboot information structure itself.
+    */
+    pmm_reserve_region((uint32_t)mb_info, sizeof(unsigned int) * 12);
+    pmm_reserve_region((uint32_t)mmap_addr, mmap_length);
 
     pmm_total_pages = (size_t)((highest_usable_address + PAGE_SIZE - 1) / PAGE_SIZE);
-    print("PMM DEBUG total=");
-    print_int((int)pmm_total_pages);
-    print("\n");
     if (pmm_total_pages > MAX_PHYSICAL_PAGES)
         pmm_total_pages = MAX_PHYSICAL_PAGES;
 
