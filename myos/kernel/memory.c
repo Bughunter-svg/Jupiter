@@ -7,9 +7,48 @@ typedef struct block_header {
     struct block_header *next;
 } block_header_t;
 
+typedef struct {
+    uint32_t flags;
+    uint32_t mem_lower;
+    uint32_t mem_upper;
+    uint32_t boot_device;
+    uint32_t cmdline;
+    uint32_t mods_count;
+    uint32_t mods_addr;
+    uint32_t syms[4];
+    uint32_t mmap_length;
+    uint32_t mmap_addr;
+    uint32_t drives_length;
+    uint32_t drives_addr;
+    uint32_t config_table;
+    uint32_t boot_loader_name;
+    uint32_t apm_table;
+    uint32_t vbe_control_info;
+    uint32_t vbe_mode_info;
+    uint16_t vbe_mode;
+    uint16_t vbe_interface_seg;
+    uint16_t vbe_interface_off;
+    uint16_t vbe_interface_len;
+    uint64_t framebuffer_addr;
+    uint32_t framebuffer_pitch;
+    uint32_t framebuffer_width;
+    uint32_t framebuffer_height;
+    uint8_t framebuffer_bpp;
+    uint8_t framebuffer_type;
+    uint16_t framebuffer_reserved;
+} __attribute__((packed)) MultibootInfo;
+
+typedef struct {
+    uint32_t size;
+    uint64_t base;
+    uint64_t length;
+    uint32_t type;
+} __attribute__((packed)) MultibootMemoryEntry;
+
 extern char kernel_end;
 
 static void print_hex64(uint64_t value);
+
 static block_header_t *free_list = (block_header_t *)0;
 static uint8_t *heap_base = (uint8_t *)0;
 static size_t heap_used = 0;
@@ -171,14 +210,7 @@ int memcmp(const void *s1, const void *s2, size_t n) {
     return 0;
 }
 
-#define MULTIBOOT_FLAG_MEM_MAP  (1 << 6)
-
-typedef struct {
-    uint32_t size;
-    uint64_t base;
-    uint64_t length;
-    uint32_t type;
-} __attribute__((packed)) MultibootMemoryEntry;
+#define MULTIBOOT_FLAG_MEM_MAP (1 << 6)
 
 static MemoryRegion memory_map[MAX_MEMORY_REGIONS];
 static size_t memory_region_count = 0;
@@ -188,19 +220,15 @@ void mem_detect_multiboot(unsigned int *mb_info) {
     if (!mb_info)
         return;
 
-    unsigned int flags = mb_info[0];
+    MultibootInfo *info = (MultibootInfo *)mb_info;
+    unsigned int flags = info->flags;
 
     memory_region_count = 0;
     usable_ram = 0;
 
-    /*
-     * Multiboot flag 6:
-     * BIOS/bootloader memory map is available.
-     */
     if (flags & MULTIBOOT_FLAG_MEM_MAP) {
-        uint32_t mmap_length = mb_info[11];
-        uint32_t mmap_addr = mb_info[12];
-
+        uint32_t mmap_length = info->mmap_length;
+        uint32_t mmap_addr = info->mmap_addr;
         uint32_t offset = 0;
 
         while (offset < mmap_length &&
@@ -213,30 +241,20 @@ void mem_detect_multiboot(unsigned int *mb_info) {
             memory_map[memory_region_count].length = entry->length;
             memory_map[memory_region_count].type = entry->type;
 
-            if (entry->type == 1) {
+            if (entry->type == 1)
                 usable_ram += (size_t)entry->length;
-            }
 
             memory_region_count++;
 
             offset += entry->size + sizeof(entry->size);
         }
 
-        /*
-         * Keep total RAM as the amount reported by the memory map.
-         * The old 256 MiB artificial cap will be removed when the
-         * physical memory manager is implemented.
-         */
         mem_set_total(usable_ram);
-
         return;
     }
 
-    /*
-     * Fall back to the basic Multiboot memory fields.
-     */
     if (flags & (1 << 0)) {
-        unsigned int mem_upper = mb_info[2];
+        unsigned int mem_upper = info->mem_upper;
         size_t total = ((size_t)mem_upper + 1024) * 1024;
 
         mem_set_total(total);
@@ -280,7 +298,7 @@ size_t mem_get_usable_ram(void) {
     return usable_ram;
 }
 
-#define MULTIBOOT_FLAG_MEM_MAP (1 << 6)
+#define MAX_PHYSICAL_PAGES 1048576U
 
 static uint8_t pmm_bitmap[BITMAP_SIZE];
 
@@ -344,13 +362,22 @@ static void pmm_mark_usable_region(uint64_t base, uint64_t length) {
     }
 }
 
+static void pmm_reserve_string(uint32_t address) {
+    if (!address)
+        return;
+
+    uint8_t *str = (uint8_t *)address;
+    size_t length = 0;
+
+    while (str[length] != '\0')
+        length++;
+
+    pmm_reserve_region(address, length + 1);
+}
+
 void pmm_init(unsigned int *mb_info) {
-    /*
-     * Start with every physical page marked USED.
-     *
-     * Then explicitly mark Multiboot type-1 regions as FREE.
-     */
     uint64_t highest_usable_address = 0;
+
     memset(pmm_bitmap, 0xFF, sizeof(pmm_bitmap));
 
     pmm_total_pages = 0;
@@ -359,55 +386,97 @@ void pmm_init(unsigned int *mb_info) {
     if (!mb_info)
         return;
 
-    unsigned int flags = mb_info[0];
+    MultibootInfo *info = (MultibootInfo *)mb_info;
+    unsigned int flags = info->flags;
 
     if (!(flags & MULTIBOOT_FLAG_MEM_MAP))
         return;
 
-    uint32_t mmap_length = mb_info[11];
-    uint32_t mmap_addr = mb_info[12];
-
+    uint32_t mmap_length = info->mmap_length;
+    uint32_t mmap_addr = info->mmap_addr;
     uint32_t offset = 0;
 
     while (offset < mmap_length) {
-        MultibootMemoryEntry *entry = (MultibootMemoryEntry *)(mmap_addr + offset);
-       	uint64_t end = entry->base + entry->length;
-	if (entry->type == 1 && end > highest_usable_address)
-		highest_usable_address = end;
+        MultibootMemoryEntry *entry =
+            (MultibootMemoryEntry *)(mmap_addr + offset);
+
+        uint64_t end = entry->base + entry->length;
+
+        if (entry->type == 1 &&
+            end > highest_usable_address) {
+            highest_usable_address = end;
+        }
 
         if (entry->type == 1) {
-            pmm_mark_usable_region(entry->base, entry->length);
+            pmm_mark_usable_region(
+                entry->base,
+                entry->length
+            );
         }
+
         offset += entry->size + sizeof(entry->size);
     }
 
-    /*
-     * Reserve the first 1 MiB.
-     *
-     * We don't want the PMM handing out low-memory pages.
-     */
     pmm_reserve_region(0, 0x100000);
-
-    /*
-     * Reserve the kernel itself.
-     */
-    extern char kernel_end;
 
     pmm_reserve_region(
         0x100000,
         (uint64_t)(uint32_t)&kernel_end - 0x100000
     );
-    /*
-     * Reserve the Multiboot information structure itself.
-    */
-    pmm_reserve_region((uint32_t)mb_info, sizeof(unsigned int) * 12);
-    pmm_reserve_region((uint32_t)mmap_addr, mmap_length);
 
-    pmm_total_pages = (size_t)((highest_usable_address + PAGE_SIZE - 1) / PAGE_SIZE);
+    pmm_reserve_region(
+        (uint32_t)mb_info,
+        sizeof(MultibootInfo)
+    );
+
+    pmm_reserve_region(
+        info->mmap_addr,
+        info->mmap_length
+    );
+
+    if (flags & (1 << 2))
+        pmm_reserve_string(info->cmdline);
+
+    if (flags & (1 << 9))
+        pmm_reserve_string(info->boot_loader_name);
+
+    if (flags & (1 << 11)) {
+        if (info->vbe_control_info)
+            pmm_reserve_region(
+                info->vbe_control_info,
+                512
+            );
+
+        if (info->vbe_mode_info)
+            pmm_reserve_region(
+                info->vbe_mode_info,
+                256
+            );
+    }
+
+    if (flags & (1 << 12)) {
+        uint64_t framebuffer_size =
+            (uint64_t)info->framebuffer_pitch *
+            (uint64_t)info->framebuffer_height;
+
+        if (info->framebuffer_addr &&
+            framebuffer_size) {
+            pmm_reserve_region(
+                info->framebuffer_addr,
+                framebuffer_size
+            );
+        }
+    }
+
+    pmm_total_pages =
+        (size_t)((highest_usable_address + PAGE_SIZE - 1) /
+                 PAGE_SIZE);
+
     if (pmm_total_pages > MAX_PHYSICAL_PAGES)
         pmm_total_pages = MAX_PHYSICAL_PAGES;
 
     print("Physical Memory Manager initialized.\n");
+
     print("Total pages: ");
     print_int((int)pmm_total_pages);
     print("\n");
@@ -447,15 +516,8 @@ void pmm_free_page(void *page_addr) {
     if (pmm_is_free(page))
         return;
 
-    /*
-     * Don't allow low memory or kernel pages to be freed.
-     *
-     * This is deliberately conservative for now.
-     */
     if (addr < 0x100000)
         return;
-
-    extern char kernel_end;
 
     if (addr < (uint32_t)&kernel_end)
         return;
@@ -493,6 +555,7 @@ void pmm_print_stats(void) {
     print(" bytes\n");
 
     print("Free RAM:    ");
-    print_int((int)((pmm_free_pages * PAGE_SIZE) / (1024 * 1024)));
+    print_int((int)((pmm_free_pages * PAGE_SIZE) /
+                   (1024 * 1024)));
     print(" MB\n");
 }
