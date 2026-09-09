@@ -1,3 +1,4 @@
+#include "paging.h"
 #include "screen.h"
 #include "keyboard.h"
 #include "string.h"
@@ -235,7 +236,7 @@ void execute_command(char *input) {
         print("| [FILE]    create, read, delete, ls         		|\n");
         print("| [FILE]    append, info, cp, edit           		|\n");
         print("| [SYSTEM]  clear, echo, meminfo, ps, calc   		|\n");
-	print("| [MEMORY]   memtest, pmtest, pmm             		|\n");
+	print("| [MEMORY]   memtest, pmtest, pmm, paging     		|\n");
         print("| [SYSTEM]  run, time, timer, sleep,memmap, uptime   	|\n");
         print("| [INFO]    cpuinfo, osinfo, status, df      		|\n");
         print("| [NETWORK] ping, ifconfig, arp              		|\n");
@@ -340,6 +341,12 @@ void execute_command(char *input) {
     }
     else if (strcmp(args[0], "pmm") == 0) {
         pmm_print_stats();
+    }
+    else if (strcmp(args[0], "paging") == 0) {
+        if (paging_is_enabled())
+            print("Paging: ENABLED\n");
+        else
+            print("Paging: DISABLED\n");
     }
     else if (strcmp(args[0], "info") == 0 && argc > 1) {
         fs_info(args[1]);
@@ -486,6 +493,7 @@ void kmain(unsigned int magic, unsigned int *mb_info) {
     mem_init();
     mem_detect_multiboot(mb_info);
     pmm_init(mb_info);
+    init_paging();
     fs_init();
     init_scheduler();
     init_interrupts();
