@@ -8,9 +8,13 @@ CFLAGS = -m32 -march=i386 -mno-sse -mno-sse2 -mno-mmx -ffreestanding -nostdlib -
 OBJS = boot/boot.o kernel/kernel.o kernel/screen.o kernel/ports.o kernel/keyboard.o \
        kernel/string.o kernel/filesystem.o kernel/process.o kernel/timer.o \
        kernel/interrupts.o kernel/isr.o kernel/splash.o kernel/system.o kernel/memory.o \
-       kernel/switch.o kernel/editor.o kernel/network.o kernel/netcmds.o kernel/login.o kernel/paging.o
+       kernel/switch.o kernel/editor.o kernel/network.o kernel/netcmds.o kernel/login.o kernel/paging.o \
+       kernel/vm.o
 
 all: kernel.bin
+
+kernel/vm.o: kernel/vm.c kernel/vm.h
+	$(CC) $(CFLAGS) -c $< -o $@
 
 kernel/switch.o: kernel/switch.asm
 	nasm -f elf32 kernel/switch.asm -o kernel/switch.o
