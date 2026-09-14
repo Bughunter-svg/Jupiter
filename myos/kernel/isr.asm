@@ -4,69 +4,41 @@ global isr_page_fault
 
 extern page_fault_handler
 
-
-; ============================================================
-; Page Fault ISR - Exception 14
-;
-; CPU automatically pushes:
-;
-;   error code
-;   EIP
-;   CS
-;   EFLAGS
-;
-; We save the general-purpose registers and pass the CPU
-; page-fault error code to the C handler.
-;
-; The C handler never returns.
-; ============================================================
-
 isr_page_fault:
     cli
     cld
-
     pusha
 
-    ; pusha pushes 8 registers = 32 bytes.
-    ;
-    ; Therefore:
-    ;
-    ; [esp + 32] = CPU-provided page-fault error code
+    ; CPU pushed the page-fault error code.
+    ; pusha added 32 bytes.
+    ; [esp + 32] = CPU error code.
 
     mov eax, [esp + 32]
-
     push eax
     call page_fault_handler
+    add esp, 4
 
-.halt:
-    cli
-    hlt
-    jmp .halt
+    ; Restore all registers saved by pusha.
+    popa
 
+    ; Now ESP points to the CPU-pushed error code.
+    add esp, 4
 
-; ============================================================
-; Timer IRQ0
-; ============================================================
+    ; Return to the instruction that faulted.
+    iret
+
 
 isr_timer:
     pusha
-
     mov al, 0x20
     out 0x20, al
-
     popa
     iret
 
 
-; ============================================================
-; Keyboard IRQ1
-; ============================================================
-
 isr_keyboard:
     pusha
-
     mov al, 0x20
     out 0x20, al
-
     popa
     iret

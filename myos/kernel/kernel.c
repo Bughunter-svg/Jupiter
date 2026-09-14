@@ -394,17 +394,23 @@ void execute_command(char *input) {
 
         paging_mapping_test();
     }
-    else if (strcmp(args[0], "pf") == 0) {
-        volatile uint32_t *fault_address =
-            (volatile uint32_t *)PAGE_FAULT_TEST_ADDRESS;
-        volatile uint32_t value;
-
-        print("Triggering page fault...\n");
-        value = *fault_address;
-        (void)value;
-    }
+    
     else if (strcmp(args[0], "info") == 0 && argc > 1) {
         fs_info(args[1]);
+    }
+    else if (strcmp(args[0], "pf") == 0) {
+	volatile uint32_t *fault_address = (volatile uint32_t *)PAGE_FAULT_TEST_ADDRESS;
+	volatile uint32_t value;
+	print("Triggering page fault...\n");
+	*fault_address = 0x4A555049U;
+	value = *fault_address;
+	print("Recovered page value: ");
+	print_hex(value);
+	print("\n");
+	if (value == 0x4A555049U)
+		print("Page fault recovery test: PASS\n");
+	else
+		print("Page fault recovery test: FAIL\n");
     }
     else if (strcmp(args[0], "cp") == 0 && argc > 2) {
         fs_copy(args[1], args[2]);

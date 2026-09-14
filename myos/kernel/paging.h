@@ -8,6 +8,7 @@
 #define PAGE_USER     0x004
 
 void init_paging(void);
+
 int paging_is_enabled(void);
 
 int map_page(uint32_t virtual_addr,
