@@ -16,6 +16,7 @@
 
 #define PAGE_FAULT_TEST_ADDRESS  0x00800000U
 #define NULL_PAGE_ADDRESS        0x00000000U
+#define READ_ONLY_TEST_ADDRESS  0x00C00000U
 
 static uint32_t page_directory[PAGE_ENTRIES]
     __attribute__((aligned(4096)));
@@ -26,6 +27,9 @@ static uint32_t first_page_table[PAGE_ENTRIES]
 static volatile int null_test_active = 0;
 static volatile int null_test_faulted = 0;
 static void *null_test_page = (void *)0;
+static volatile int ro_test_active = 0;
+static volatile int ro_test_faulted = 0;
+static void *ro_test_page = (void *)0;
 
 void page_fault_handler(uint32_t error_code)
 {
@@ -92,6 +96,36 @@ void page_fault_handler(uint32_t error_code)
         }
 
         print("Null page test recovery FAILED.\n");
+    }
+
+    if (ro_test_active &&
+        fault_address == READ_ONLY_TEST_ADDRESS &&
+        (error_code & PAGE_FAULT_PROTECTION) &&
+        (error_code & PAGE_FAULT_WRITE)) {
+
+        ro_test_faulted = 1;
+
+        {
+            uint32_t *page = get_page(READ_ONLY_TEST_ADDRESS);
+
+            if (page && (*page & PAGE_PRESENT)) {
+                *page |= PAGE_WRITABLE;
+
+                asm volatile(
+                    "invlpg (%0)"
+                    :
+                    : "r"(READ_ONLY_TEST_ADDRESS)
+                    : "memory"
+                );
+
+                print("Read-only violation detected.\n");
+                print("Page temporarily made writable.\n");
+                print("Page fault recovered.\n");
+                return;
+            }
+        }
+
+        print("Read-only page test recovery FAILED.\n");
     }
 
     if (fault_address == PAGE_FAULT_TEST_ADDRESS &&
@@ -287,6 +321,130 @@ int null_page_test(void)
     return result;
 }
 
+
+int read_only_page_test(void)
+{
+    volatile uint32_t *test_ptr;
+    uint32_t *page;
+    uint32_t value;
+    int result = 1;
+
+    ro_test_active = 1;
+    ro_test_faulted = 0;
+    ro_test_page = pmm_alloc_page();
+
+    print("\nRead-Only Page Protection Test\n");
+    print("==============================\n");
+
+    if (!ro_test_page) {
+        print("Page allocation: FAIL\n");
+        ro_test_active = 0;
+        return 0;
+    }
+
+    if (map_page(
+            READ_ONLY_TEST_ADDRESS,
+            (uint32_t)ro_test_page,
+            PAGE_PRESENT | PAGE_WRITABLE) != 0) {
+
+        print("Page mapping: FAIL\n");
+        pmm_free_page(ro_test_page);
+        ro_test_page = (void *)0;
+        ro_test_active = 0;
+        return 0;
+    }
+
+    test_ptr = (volatile uint32_t *)READ_ONLY_TEST_ADDRESS;
+    *test_ptr = 0x524F5445U;
+
+    page = get_page(READ_ONLY_TEST_ADDRESS);
+
+    if (!page) {
+        result = 0;
+    } else {
+        *page &= ~PAGE_WRITABLE;
+
+        asm volatile(
+            "invlpg (%0)"
+            :
+            : "r"(READ_ONLY_TEST_ADDRESS)
+            : "memory"
+        );
+    }
+
+    if (result)
+        print("Page allocation: PASS\n");
+    else
+        print("Page allocation: FAIL\n");
+
+    if (result && page && !(*page & PAGE_WRITABLE))
+        print("Read-only mapping: PASS\n");
+    else {
+        print("Read-only mapping: FAIL\n");
+        result = 0;
+    }
+
+    if (result) {
+        value = *test_ptr;
+
+        if (value == 0x524F5445U)
+            print("Read access: PASS\n");
+        else {
+            print("Read access: FAIL\n");
+            result = 0;
+        }
+    }
+
+    if (result)
+        *test_ptr = 0x524F5432U;
+
+    if (!ro_test_faulted)
+        result = 0;
+
+    value = *test_ptr;
+
+    if (value == 0x524F5432U)
+        print("Write after recovery: PASS\n");
+    else
+        result = 0;
+
+    page = get_page(READ_ONLY_TEST_ADDRESS);
+
+    if (page) {
+        *page &= ~PAGE_WRITABLE;
+
+        asm volatile(
+            "invlpg (%0)"
+            :
+            : "r"(READ_ONLY_TEST_ADDRESS)
+            : "memory"
+        );
+    } else {
+        result = 0;
+    }
+
+    if (unmap_page(READ_ONLY_TEST_ADDRESS) != 0)
+        result = 0;
+
+    if (ro_test_page)
+        pmm_free_page(ro_test_page);
+
+    ro_test_page = (void *)0;
+    ro_test_active = 0;
+
+    page = get_page(READ_ONLY_TEST_ADDRESS);
+
+    if (page && (*page & PAGE_PRESENT))
+        result = 0;
+
+    if (result)
+        print("Read-only page protection: PASS\n");
+    else
+        print("Read-only page protection: FAIL\n");
+
+    return result;
+}
+
 void init_paging(void)
 {
     uint32_t i;
@@ -327,6 +485,7 @@ void init_paging(void)
         );
 
         cr0 |= 0x80000000U;
+	cr0 |= 0x00010000U;
 
         asm volatile(
             "mov %0, %%cr0"

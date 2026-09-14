@@ -814,6 +814,7 @@ void execute_command(char *input)
         print("| [SYSTEM]  clear, echo, meminfo, ps, calc               |\n");
         print("| [MEMORY]  memtest, pmtest, pmm, paging, pf, vmtest      |\n");
         print("| [MEMORY]  vmtest2, kheaptest, kheapstress, nulltest   |\n");
+        print("| [MEMORY]  rotest                                      |\n");
         print("| [SYSTEM]  run, time, timer, sleep, memmap, uptime       |\n");
         print("| [INFO]    cpuinfo, osinfo, status, df                  |\n");
         print("| [NETWORK] ping, ifconfig, arp                          |\n");
@@ -1090,6 +1091,10 @@ void execute_command(char *input)
     
     else if (strcmp(args[0], "nulltest") == 0) {
         null_page_test();
+    }
+
+    else if (strcmp(args[0], "rotest") == 0) {
+        read_only_page_test();
     }
 
     else if (strcmp(args[0], "kheaptest") == 0) {
@@ -1460,7 +1465,7 @@ void kmain(unsigned int magic,
     show_login_screen();
 
     print("Welcome to JupiterOS Shell!\n");
-    print("Interrupts: DISABLED (Safe Mode)\n");
+    print("Interrupts: ENABLED\n");
 
     network_init();
 
