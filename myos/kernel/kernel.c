@@ -704,6 +704,76 @@ static void paging_mapping_test(void)
         print("Dynamic mapping test: FAIL\n");
 }
 
+static void kmalloc_vmm_test(void)
+{
+    size_t before;
+    size_t after_alloc;
+    size_t after_free;
+    size_t allocation_size = 0x00400000U;
+    volatile uint32_t *block;
+    int passed = 1;
+
+    print("\nKMalloc VMM Fallback Test\n");
+    print("=========================\n");
+
+    before = vm_get_used_pages();
+
+    print("Initial VMM pages: ");
+    print_int((int)before);
+    print("\n");
+
+    block = (volatile uint32_t *)kmalloc(allocation_size);
+
+    if (!block) {
+        print("VMM fallback allocation: FAIL\n");
+        return;
+    }
+
+    if ((uint32_t)block < VM_START ||
+        (uint32_t)block >= VM_END) {
+        print("VMM fallback address: FAIL\n");
+        passed = 0;
+    } else {
+        print("VMM fallback address: PASS\n");
+    }
+
+    block[0] = 0x4A555049U;
+
+    if (block[0] != 0x4A555049U) {
+        print("Read/write: FAIL\n");
+        passed = 0;
+    } else {
+        print("Read/write: PASS\n");
+    }
+
+    after_alloc = vm_get_used_pages();
+
+    if (after_alloc > before) {
+        print("VMM pages allocated: PASS\n");
+    } else {
+        print("VMM pages allocated: FAIL\n");
+        passed = 0;
+    }
+
+    kfree((void *)block);
+
+    after_free = vm_get_used_pages();
+
+    if (after_free == before) {
+        print("VMM reclamation: PASS\n");
+    } else {
+        print("VMM reclamation: FAIL\n");
+        passed = 0;
+    }
+
+    print("kmalloc VMM fallback: ");
+
+    if (passed)
+        print("PASS\n");
+    else
+        print("FAIL\n");
+}
+
 void execute_command(char *input)
 {
     char *args[10];
@@ -1028,6 +1098,10 @@ void execute_command(char *input)
 
         kernel_vmm_heap_stress_test();
 
+    }
+
+    else if (strcmp(args[0], "kmallocvmm") == 0) {
+    	kmalloc_vmm_test();
     }
 
     else if (strcmp(args[0], "edit") == 0 &&

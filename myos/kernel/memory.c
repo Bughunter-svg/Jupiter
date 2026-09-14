@@ -1,10 +1,13 @@
 #include "memory.h"
 #include "screen.h"
+#include "vm.h"
 
 typedef struct block_header {
     size_t size;
     int free;
     struct block_header *next;
+    int vmm;
+    size_t vmm_pages;
 } block_header_t;
 
 typedef struct {
@@ -82,19 +85,27 @@ void mem_set_total(size_t total) {
 
     heap_end = (uint8_t *)total_ram;
 
+    if (heap_end > (uint8_t *)0x00400000U)
+        heap_end = (uint8_t *)0x00400000U;
+
     if (heap_start >= heap_end)
         heap_start = heap_end;
 }
 
 void *kmalloc(size_t size) {
+    size_t aligned;
+    size_t hdr;
+    block_header_t *current;
+    block_header_t *previous;
+
     if (size == 0)
         return (void *)0;
 
-    size_t aligned = align_size(size);
-    size_t hdr = header_size();
+    aligned = align_size(size);
+    hdr = header_size();
 
-    block_header_t *current = free_list;
-    block_header_t *previous = (block_header_t *)0;
+    current = free_list;
+    previous = (block_header_t *)0;
 
     while (current) {
         if (current->free && current->size >= aligned) {
@@ -105,6 +116,8 @@ void *kmalloc(size_t size) {
 
             current->free = 0;
             current->next = (block_header_t *)0;
+            current->vmm = 0;
+            current->vmm_pages = 0;
 
             heap_used += current->size;
 
@@ -115,28 +128,105 @@ void *kmalloc(size_t size) {
         current = current->next;
     }
 
-    if (heap_start + hdr + aligned > heap_end) {
-        print("kmalloc: OUT OF MEMORY\n");
-        return (void *)0;
+    if (heap_start + hdr + aligned <= heap_end) {
+        block_header_t *block =
+            (block_header_t *)heap_start;
+
+        block->size = aligned;
+        block->free = 0;
+        block->next = (block_header_t *)0;
+        block->vmm = 0;
+        block->vmm_pages = 0;
+
+        heap_start += hdr + aligned;
+        heap_used += aligned;
+
+        return (void *)((uint8_t *)block + hdr);
     }
 
-    block_header_t *block = (block_header_t *)heap_start;
+    {
+        size_t total_size = hdr + aligned;
+        size_t page_count;
+        block_header_t *block;
 
-    block->size = aligned;
-    block->free = 0;
-    block->next = (block_header_t *)0;
+        if (total_size >
+            (size_t)-1 - (PAGE_SIZE - 1U)) {
 
-    heap_start += hdr + aligned;
-    heap_used += aligned;
+            print("kmalloc: SIZE OVERFLOW\n");
+            return (void *)0;
+        }
 
-    return (void *)((uint8_t *)block + hdr);
+        page_count =
+            (total_size + PAGE_SIZE - 1U) /
+            PAGE_SIZE;
+
+        if (page_count == 0 ||
+            page_count > VM_PAGE_COUNT) {
+
+            print("kmalloc: REQUEST TOO LARGE\n");
+            return (void *)0;
+        }
+
+        block =
+            (block_header_t *)vm_alloc_pages(page_count);
+
+        if (!block) {
+            print("kmalloc: OUT OF MEMORY\n");
+            return (void *)0;
+        }
+
+        block->size = aligned;
+        block->free = 0;
+        block->next = (block_header_t *)0;
+        block->vmm = 1;
+        block->vmm_pages = page_count;
+
+        heap_used += aligned;
+
+        return (void *)((uint8_t *)block + hdr);
+    }
 }
 
 void kfree(void *ptr) {
+    size_t hdr;
+    block_header_t *block;
+
     if (!ptr)
         return;
 
-    size_t hdr = header_size();
+    hdr = header_size();
+
+    if ((uint8_t *)ptr >= (uint8_t *)VM_START &&
+        (uint8_t *)ptr < (uint8_t *)VM_END) {
+
+        block =
+            (block_header_t *)(
+                (uint8_t *)ptr - hdr
+            );
+
+        if (!block->vmm)
+            return;
+
+        if (block->free)
+            return;
+
+        if (block->vmm_pages == 0)
+            return;
+
+        block->free = 1;
+
+        if (heap_used >= block->size)
+            heap_used -= block->size;
+        else
+            heap_used = 0;
+
+        vm_free_pages(
+            (void *)block,
+            block->vmm_pages
+        );
+
+        return;
+    }
 
     if ((uint8_t *)ptr < heap_base + hdr)
         return;
@@ -144,13 +234,17 @@ void kfree(void *ptr) {
     if ((uint8_t *)ptr >= heap_start)
         return;
 
-    block_header_t *block =
-        (block_header_t *)((uint8_t *)ptr - hdr);
+    block =
+        (block_header_t *)(
+            (uint8_t *)ptr - hdr
+        );
 
     if (block->free)
         return;
 
     block->free = 1;
+    block->vmm = 0;
+    block->vmm_pages = 0;
 
     if (heap_used >= block->size)
         heap_used -= block->size;
@@ -220,7 +314,9 @@ void mem_detect_multiboot(unsigned int *mb_info) {
     if (!mb_info)
         return;
 
-    MultibootInfo *info = (MultibootInfo *)mb_info;
+    MultibootInfo *info =
+        (MultibootInfo *)mb_info;
+
     unsigned int flags = info->flags;
 
     memory_region_count = 0;
@@ -237,16 +333,24 @@ void mem_detect_multiboot(unsigned int *mb_info) {
             MultibootMemoryEntry *entry =
                 (MultibootMemoryEntry *)(mmap_addr + offset);
 
-            memory_map[memory_region_count].base = entry->base;
-            memory_map[memory_region_count].length = entry->length;
-            memory_map[memory_region_count].type = entry->type;
+            memory_map[memory_region_count].base =
+                entry->base;
+
+            memory_map[memory_region_count].length =
+                entry->length;
+
+            memory_map[memory_region_count].type =
+                entry->type;
 
             if (entry->type == 1)
-                usable_ram += (size_t)entry->length;
+                usable_ram +=
+                    (size_t)entry->length;
 
             memory_region_count++;
 
-            offset += entry->size + sizeof(entry->size);
+            offset +=
+                entry->size +
+                sizeof(entry->size);
         }
 
         mem_set_total(usable_ram);
@@ -254,8 +358,11 @@ void mem_detect_multiboot(unsigned int *mb_info) {
     }
 
     if (flags & (1 << 0)) {
-        unsigned int mem_upper = info->mem_upper;
-        size_t total = ((size_t)mem_upper + 1024) * 1024;
+        unsigned int mem_upper =
+            info->mem_upper;
+
+        size_t total =
+            ((size_t)mem_upper + 1024) * 1024;
 
         mem_set_total(total);
         return;
@@ -268,7 +375,10 @@ void mem_print_map(void) {
     print("\nJupiterOS Memory Map\n");
     print("====================\n");
 
-    for (size_t i = 0; i < memory_region_count; i++) {
+    for (size_t i = 0;
+         i < memory_region_count;
+         i++) {
+
         print("Region ");
         print_int((int)i);
         print(": ");
@@ -290,7 +400,13 @@ void mem_print_map(void) {
     }
 
     print("Usable RAM: ");
-    print_int((int)(usable_ram / (1024 * 1024)));
+    print_int(
+        (int)(
+            usable_ram /
+            (1024 * 1024)
+        )
+    );
+
     print(" MB\n");
 }
 
@@ -306,29 +422,50 @@ static size_t pmm_total_pages = 0;
 static size_t pmm_free_pages = 0;
 
 static void pmm_set_used(size_t page) {
-    pmm_bitmap[page / 8] |= (uint8_t)(1U << (page % 8));
+    pmm_bitmap[page / 8] |=
+        (uint8_t)(1U << (page % 8));
 }
 
 static void pmm_set_free(size_t page) {
-    pmm_bitmap[page / 8] &= (uint8_t)~(1U << (page % 8));
+    pmm_bitmap[page / 8] &=
+        (uint8_t)~(1U << (page % 8));
 }
 
 static int pmm_is_free(size_t page) {
-    return !(pmm_bitmap[page / 8] & (1U << (page % 8)));
+    return !(
+        pmm_bitmap[page / 8] &
+        (1U << (page % 8))
+    );
 }
 
 static void print_hex64(uint64_t value) {
-    print_hex((uint32_t)(value >> 32));
-    print_hex((uint32_t)value);
+    print_hex(
+        (uint32_t)(value >> 32)
+    );
+
+    print_hex(
+        (uint32_t)value
+    );
 }
 
-static void pmm_reserve_region(uint64_t base, uint64_t length) {
-    uint64_t start = base & ~(uint64_t)(PAGE_SIZE - 1);
-    uint64_t end = (base + length + PAGE_SIZE - 1) &
-                   ~(uint64_t)(PAGE_SIZE - 1);
+static void pmm_reserve_region(
+    uint64_t base,
+    uint64_t length
+) {
+    uint64_t start =
+        base &
+        ~(uint64_t)(PAGE_SIZE - 1);
 
-    for (uint64_t addr = start; addr < end; addr += PAGE_SIZE) {
-        size_t page = (size_t)(addr / PAGE_SIZE);
+    uint64_t end =
+        (base + length + PAGE_SIZE - 1) &
+        ~(uint64_t)(PAGE_SIZE - 1);
+
+    for (uint64_t addr = start;
+         addr < end;
+         addr += PAGE_SIZE) {
+
+        size_t page =
+            (size_t)(addr / PAGE_SIZE);
 
         if (page >= MAX_PHYSICAL_PAGES)
             break;
@@ -342,15 +479,24 @@ static void pmm_reserve_region(uint64_t base, uint64_t length) {
     }
 }
 
-static void pmm_mark_usable_region(uint64_t base, uint64_t length) {
-    uint64_t start = (base + PAGE_SIZE - 1) &
-                     ~(uint64_t)(PAGE_SIZE - 1);
+static void pmm_mark_usable_region(
+    uint64_t base,
+    uint64_t length
+) {
+    uint64_t start =
+        (base + PAGE_SIZE - 1) &
+        ~(uint64_t)(PAGE_SIZE - 1);
 
-    uint64_t end = (base + length) &
-                   ~(uint64_t)(PAGE_SIZE - 1);
+    uint64_t end =
+        (base + length) &
+        ~(uint64_t)(PAGE_SIZE - 1);
 
-    for (uint64_t addr = start; addr < end; addr += PAGE_SIZE) {
-        size_t page = (size_t)(addr / PAGE_SIZE);
+    for (uint64_t addr = start;
+         addr < end;
+         addr += PAGE_SIZE) {
+
+        size_t page =
+            (size_t)(addr / PAGE_SIZE);
 
         if (page >= MAX_PHYSICAL_PAGES)
             break;
@@ -362,23 +508,36 @@ static void pmm_mark_usable_region(uint64_t base, uint64_t length) {
     }
 }
 
-static void pmm_reserve_string(uint32_t address) {
+static void pmm_reserve_string(
+    uint32_t address
+) {
     if (!address)
         return;
 
-    uint8_t *str = (uint8_t *)address;
+    uint8_t *str =
+        (uint8_t *)address;
+
     size_t length = 0;
 
     while (str[length] != '\0')
         length++;
 
-    pmm_reserve_region(address, length + 1);
+    pmm_reserve_region(
+        address,
+        length + 1
+    );
 }
 
-void pmm_init(unsigned int *mb_info) {
+void pmm_init(
+    unsigned int *mb_info
+) {
     uint64_t highest_usable_address = 0;
 
-    memset(pmm_bitmap, 0xFF, sizeof(pmm_bitmap));
+    memset(
+        pmm_bitmap,
+        0xFF,
+        sizeof(pmm_bitmap)
+    );
 
     pmm_total_pages = 0;
     pmm_free_pages = 0;
@@ -386,42 +545,62 @@ void pmm_init(unsigned int *mb_info) {
     if (!mb_info)
         return;
 
-    MultibootInfo *info = (MultibootInfo *)mb_info;
-    unsigned int flags = info->flags;
+    MultibootInfo *info =
+        (MultibootInfo *)mb_info;
+
+    unsigned int flags =
+        info->flags;
 
     if (!(flags & MULTIBOOT_FLAG_MEM_MAP))
         return;
 
-    uint32_t mmap_length = info->mmap_length;
-    uint32_t mmap_addr = info->mmap_addr;
+    uint32_t mmap_length =
+        info->mmap_length;
+
+    uint32_t mmap_addr =
+        info->mmap_addr;
+
     uint32_t offset = 0;
 
     while (offset < mmap_length) {
-        MultibootMemoryEntry *entry =
-            (MultibootMemoryEntry *)(mmap_addr + offset);
 
-        uint64_t end = entry->base + entry->length;
+        MultibootMemoryEntry *entry =
+            (MultibootMemoryEntry *)(
+                mmap_addr + offset
+            );
+
+        uint64_t end =
+            entry->base +
+            entry->length;
 
         if (entry->type == 1 &&
             end > highest_usable_address) {
+
             highest_usable_address = end;
         }
 
         if (entry->type == 1) {
+
             pmm_mark_usable_region(
                 entry->base,
                 entry->length
             );
         }
 
-        offset += entry->size + sizeof(entry->size);
+        offset +=
+            entry->size +
+            sizeof(entry->size);
     }
 
-    pmm_reserve_region(0, 0x100000);
+    pmm_reserve_region(
+        0,
+        0x100000
+    );
 
     pmm_reserve_region(
         0x100000,
-        (uint64_t)(uint32_t)&kernel_end - 0x100000
+        (uint64_t)(uint32_t)&kernel_end -
+        0x100000
     );
 
     pmm_reserve_region(
@@ -435,32 +614,43 @@ void pmm_init(unsigned int *mb_info) {
     );
 
     if (flags & (1 << 2))
-        pmm_reserve_string(info->cmdline);
+        pmm_reserve_string(
+            info->cmdline
+        );
 
     if (flags & (1 << 9))
-        pmm_reserve_string(info->boot_loader_name);
+        pmm_reserve_string(
+            info->boot_loader_name
+        );
 
     if (flags & (1 << 11)) {
-        if (info->vbe_control_info)
+
+        if (info->vbe_control_info) {
+
             pmm_reserve_region(
                 info->vbe_control_info,
                 512
             );
+        }
 
-        if (info->vbe_mode_info)
+        if (info->vbe_mode_info) {
+
             pmm_reserve_region(
                 info->vbe_mode_info,
                 256
             );
+        }
     }
 
     if (flags & (1 << 12)) {
+
         uint64_t framebuffer_size =
             (uint64_t)info->framebuffer_pitch *
             (uint64_t)info->framebuffer_height;
 
         if (info->framebuffer_addr &&
             framebuffer_size) {
+
             pmm_reserve_region(
                 info->framebuffer_addr,
                 framebuffer_size
@@ -469,46 +659,72 @@ void pmm_init(unsigned int *mb_info) {
     }
 
     pmm_total_pages =
-        (size_t)((highest_usable_address + PAGE_SIZE - 1) /
-                 PAGE_SIZE);
+        (size_t)(
+            (highest_usable_address +
+             PAGE_SIZE - 1) /
+            PAGE_SIZE
+        );
 
-    if (pmm_total_pages > MAX_PHYSICAL_PAGES)
-        pmm_total_pages = MAX_PHYSICAL_PAGES;
+    if (pmm_total_pages >
+        MAX_PHYSICAL_PAGES) {
 
-    print("Physical Memory Manager initialized.\n");
+        pmm_total_pages =
+            MAX_PHYSICAL_PAGES;
+    }
+
+    print(
+        "Physical Memory Manager initialized.\n"
+    );
 
     print("Total pages: ");
-    print_int((int)pmm_total_pages);
+    print_int(
+        (int)pmm_total_pages
+    );
     print("\n");
 
     print("Free pages: ");
-    print_int((int)pmm_free_pages);
+    print_int(
+        (int)pmm_free_pages
+    );
     print("\n");
 }
 
 void *pmm_alloc_page(void) {
-    for (size_t page = 0; page < pmm_total_pages; page++) {
+    for (size_t page = 0;
+         page < pmm_total_pages;
+         page++) {
+
         if (pmm_is_free(page)) {
+
             pmm_set_used(page);
 
             if (pmm_free_pages > 0)
                 pmm_free_pages--;
 
-            return (void *)(page * PAGE_SIZE);
+            return (void *)(
+                page * PAGE_SIZE
+            );
         }
     }
 
-    print("PMM: OUT OF PHYSICAL MEMORY\n");
+    print(
+        "PMM: OUT OF PHYSICAL MEMORY\n"
+    );
+
     return (void *)0;
 }
 
-void pmm_free_page(void *page_addr) {
-    uint32_t addr = (uint32_t)page_addr;
+void pmm_free_page(
+    void *page_addr
+) {
+    uint32_t addr =
+        (uint32_t)page_addr;
 
     if (addr % PAGE_SIZE != 0)
         return;
 
-    size_t page = addr / PAGE_SIZE;
+    size_t page =
+        addr / PAGE_SIZE;
 
     if (page >= pmm_total_pages)
         return;
@@ -539,15 +755,24 @@ void pmm_print_stats(void) {
     print("=======================\n");
 
     print("Total pages: ");
-    print_int((int)pmm_total_pages);
+    print_int(
+        (int)pmm_total_pages
+    );
     print("\n");
 
     print("Free pages:  ");
-    print_int((int)pmm_free_pages);
+    print_int(
+        (int)pmm_free_pages
+    );
     print("\n");
 
     print("Used pages:  ");
-    print_int((int)(pmm_total_pages - pmm_free_pages));
+    print_int(
+        (int)(
+            pmm_total_pages -
+            pmm_free_pages
+        )
+    );
     print("\n");
 
     print("Page size:   ");
@@ -555,7 +780,11 @@ void pmm_print_stats(void) {
     print(" bytes\n");
 
     print("Free RAM:    ");
-    print_int((int)((pmm_free_pages * PAGE_SIZE) /
-                   (1024 * 1024)));
+    print_int(
+        (int)(
+            (pmm_free_pages * PAGE_SIZE) /
+            (1024 * 1024)
+        )
+    );
     print(" MB\n");
 }
