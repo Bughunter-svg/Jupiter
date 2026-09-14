@@ -1,4 +1,5 @@
 #include "paging.h"
+#include "vm.h"
 #include "memory.h"
 #include "screen.h"
 #include <stdint.h>
@@ -17,6 +18,7 @@
 #define PAGE_FAULT_TEST_ADDRESS  0x00800000U
 #define NULL_PAGE_ADDRESS        0x00000000U
 #define READ_ONLY_TEST_ADDRESS  0x00C00000U
+#define GUARD_TEST_ADDRESS       0x00D00000U
 
 static uint32_t page_directory[PAGE_ENTRIES]
     __attribute__((aligned(4096)));
@@ -30,6 +32,10 @@ static void *null_test_page = (void *)0;
 static volatile int ro_test_active = 0;
 static volatile int ro_test_faulted = 0;
 static void *ro_test_page = (void *)0;
+static volatile int guard_test_active = 0;
+static volatile int guard_test_faulted = 0;
+static void *guard_test_page = (void *)0;
+static volatile uint32_t guard_test_fault_address = 0;
 
 void page_fault_handler(uint32_t error_code)
 {
@@ -126,6 +132,34 @@ void page_fault_handler(uint32_t error_code)
         }
 
         print("Read-only page test recovery FAILED.\n");
+    }
+
+    if (guard_test_active &&
+        fault_address == guard_test_fault_address &&
+        !(error_code & PAGE_FAULT_PROTECTION)) {
+
+        guard_test_faulted = 1;
+
+        guard_test_page = pmm_alloc_page();
+        physical_page = guard_test_page;
+
+        if (physical_page) {
+            if (map_page(
+                    guard_test_fault_address,
+                    (uint32_t)physical_page,
+                    PAGE_PRESENT | PAGE_WRITABLE) == 0) {
+
+                print("Guard page violation detected.\n");
+                print("Guard page temporarily mapped.\n");
+                print("Page fault recovered.\n");
+                return;
+            }
+
+            pmm_free_page(physical_page);
+            guard_test_page = (void *)0;
+        }
+
+        print("Guard page test recovery FAILED.\n");
     }
 
     if (fault_address == PAGE_FAULT_TEST_ADDRESS &&
@@ -441,6 +475,138 @@ int read_only_page_test(void)
         print("Read-only page protection: PASS\n");
     else
         print("Read-only page protection: FAIL\n");
+
+    return result;
+}
+
+
+int guard_page_test(void)
+{
+    volatile uint32_t *guard_ptr;
+    volatile uint32_t *valid_ptr;
+    uint32_t *page;
+    uint32_t value;
+    uint32_t valid_address;
+    uint32_t lower_guard_address;
+    uint32_t upper_guard_address;
+    int result = 1;
+
+    guard_test_active = 1;
+    guard_test_faulted = 0;
+    guard_test_page = (void *)0;
+    guard_test_fault_address = 0;
+
+    print("\nGuard Page Protection Test\n");
+    print("==========================\n");
+
+    valid_address =
+        (uint32_t)vm_alloc_guarded_pages(1);
+
+    if (!valid_address) {
+        print("Guarded allocation: FAIL\n");
+        guard_test_active = 0;
+        return 0;
+    }
+
+    lower_guard_address = valid_address - VM_PAGE_SIZE;
+    upper_guard_address = valid_address + VM_PAGE_SIZE;
+    guard_test_fault_address = lower_guard_address;
+
+    print("Guarded allocation: PASS\n");
+
+    page = get_page(lower_guard_address);
+
+    if (page && !(*page & PAGE_PRESENT))
+        print("Lower guard page unmapped: PASS\n");
+    else {
+        print("Lower guard page unmapped: FAIL\n");
+        result = 0;
+    }
+
+    page = get_page(valid_address);
+
+    if (page && (*page & PAGE_PRESENT))
+        print("Allocated page mapped: PASS\n");
+    else {
+        print("Allocated page mapped: FAIL\n");
+        result = 0;
+    }
+
+    page = get_page(upper_guard_address);
+
+    if (page && !(*page & PAGE_PRESENT))
+        print("Upper guard page unmapped: PASS\n");
+    else {
+        print("Upper guard page unmapped: FAIL\n");
+        result = 0;
+    }
+
+    valid_ptr = (volatile uint32_t *)valid_address;
+
+    if (result) {
+        *valid_ptr = 0x47554152U;
+
+        if (*valid_ptr == 0x47554152U)
+            print("Valid access: PASS\n");
+        else {
+            print("Valid access: FAIL\n");
+            result = 0;
+        }
+    }
+
+    guard_ptr = (volatile uint32_t *)lower_guard_address;
+
+    if (result)
+        *guard_ptr = 0x47554152U;
+
+    if (!guard_test_faulted) {
+        print("Guard page fault: FAIL\n");
+        result = 0;
+    } else {
+        print("Guard page fault: PASS\n");
+    }
+
+    value = *guard_ptr;
+
+    if (value == 0x47554152U)
+        print("Fault recovery: PASS\n");
+    else {
+        print("Fault recovery: FAIL\n");
+        result = 0;
+    }
+
+    if (unmap_page(lower_guard_address) != 0)
+        result = 0;
+
+    if (guard_test_page)
+        pmm_free_page(guard_test_page);
+
+    guard_test_page = (void *)0;
+    guard_test_fault_address = 0;
+    guard_test_active = 0;
+
+    if (vm_free_guarded_pages((void *)valid_address, 1) != 0)
+        result = 0;
+
+    page = get_page(lower_guard_address);
+
+    if (page && (*page & PAGE_PRESENT))
+        result = 0;
+
+    page = get_page(valid_address);
+
+    if (page && (*page & PAGE_PRESENT))
+        result = 0;
+
+    page = get_page(upper_guard_address);
+
+    if (page && (*page & PAGE_PRESENT))
+        result = 0;
+
+    if (result)
+        print("Guard page protection: PASS\n");
+    else
+        print("Guard page protection: FAIL\n");
 
     return result;
 }

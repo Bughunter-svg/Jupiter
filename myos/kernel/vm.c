@@ -390,6 +390,197 @@ int vm_free_pages(void *virtual_address, size_t count)
 }
 
 
+void *vm_alloc_guarded_pages(size_t count)
+{
+    size_t start;
+    size_t i;
+    size_t total;
+    uint32_t virtual_address;
+    void *physical_page;
+
+    if (count == 0 || count > VM_PAGE_COUNT - 2U)
+        return (void *)0;
+
+    total = count + 2U;
+
+    for (start = 0; start + total <= VM_PAGE_COUNT; start++) {
+        int found = 1;
+
+        for (i = 0; i < total; i++) {
+            if (vm_is_used(start + i)) {
+                found = 0;
+                break;
+            }
+        }
+
+        if (found)
+            break;
+    }
+
+    if (start + total > VM_PAGE_COUNT)
+        return (void *)0;
+
+    vm_set_used(start);
+    vm_set_used(start + count + 1U);
+
+    for (i = 0; i < count; i++) {
+        size_t page = start + 1U + i;
+
+        virtual_address =
+            VM_START +
+            (uint32_t)(page * VM_PAGE_SIZE);
+
+        physical_page = pmm_alloc_page();
+
+        if (!physical_page) {
+            while (i > 0) {
+                uint32_t rollback_address;
+                uint32_t *entry;
+                uint32_t physical_address;
+
+                i--;
+                page = start + 1U + i;
+
+                rollback_address =
+                    VM_START +
+                    (uint32_t)(page * VM_PAGE_SIZE);
+
+                entry = get_page(rollback_address);
+
+                if (entry && (*entry & PAGE_PRESENT)) {
+                    physical_address =
+                        *entry & 0xFFFFF000U;
+
+                    unmap_page(rollback_address);
+                    pmm_free_page((void *)physical_address);
+                }
+
+                vm_set_free(page);
+                if (vm_used_pages > 0)
+                    vm_used_pages--;
+            }
+
+            vm_set_free(start);
+            vm_set_free(start + count + 1U);
+            return (void *)0;
+        }
+
+        if (map_page(
+                virtual_address,
+                (uint32_t)physical_page,
+                PAGE_PRESENT | PAGE_WRITABLE) < 0) {
+
+            pmm_free_page(physical_page);
+
+            while (i > 0) {
+                uint32_t rollback_address;
+                uint32_t *entry;
+                uint32_t physical_address;
+
+                i--;
+                page = start + 1U + i;
+
+                rollback_address =
+                    VM_START +
+                    (uint32_t)(page * VM_PAGE_SIZE);
+
+                entry = get_page(rollback_address);
+
+                if (entry && (*entry & PAGE_PRESENT)) {
+                    physical_address =
+                        *entry & 0xFFFFF000U;
+
+                    unmap_page(rollback_address);
+                    pmm_free_page((void *)physical_address);
+                }
+
+                vm_set_free(page);
+                if (vm_used_pages > 0)
+                    vm_used_pages--;
+            }
+
+            vm_set_free(start);
+            vm_set_free(start + count + 1U);
+            return (void *)0;
+        }
+
+        vm_set_used(page);
+        vm_used_pages++;
+    }
+
+    return (void *)(
+        VM_START +
+        (uint32_t)((start + 1U) * VM_PAGE_SIZE)
+    );
+}
+
+int vm_free_guarded_pages(void *virtual_address, size_t count)
+{
+    uint32_t address;
+    size_t start;
+    size_t i;
+
+    if (!virtual_address || count == 0)
+        return -1;
+
+    address = (uint32_t)virtual_address;
+
+    if (address & (VM_PAGE_SIZE - 1U))
+        return -2;
+
+    if (address < VM_START + VM_PAGE_SIZE ||
+        address >= VM_END - VM_PAGE_SIZE)
+        return -3;
+
+    start =
+        (size_t)((address - VM_START) / VM_PAGE_SIZE) - 1U;
+
+    if (count > VM_PAGE_COUNT - start - 2U)
+        return -4;
+
+    if (!vm_is_used(start) ||
+        !vm_is_used(start + count + 1U))
+        return -5;
+
+    for (i = 0; i < count; i++) {
+        size_t page = start + 1U + i;
+        uint32_t page_address =
+            VM_START +
+            (uint32_t)(page * VM_PAGE_SIZE);
+        uint32_t *entry =
+            get_page(page_address);
+
+        if (!vm_is_used(page) ||
+            !entry ||
+            !(*entry & PAGE_PRESENT))
+            return -6;
+    }
+
+    for (i = 0; i < count; i++) {
+        size_t page = start + 1U + i;
+        uint32_t page_address =
+            VM_START +
+            (uint32_t)(page * VM_PAGE_SIZE);
+        uint32_t *entry =
+            get_page(page_address);
+        uint32_t physical_address =
+            *entry & 0xFFFFF000U;
+
+        unmap_page(page_address);
+        pmm_free_page((void *)physical_address);
+        vm_set_free(page);
+
+        if (vm_used_pages > 0)
+            vm_used_pages--;
+    }
+
+    vm_set_free(start);
+    vm_set_free(start + count + 1U);
+
+    return 0;
+}
+
+
 /* ---------------------------------------------------------
  * VMM-backed kernel allocation
  *

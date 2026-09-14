@@ -15,5 +15,6 @@ uint32_t *get_page(uint32_t virtual_addr);
 void page_fault_handler(uint32_t error_code);
 int null_page_test(void);
 int read_only_page_test(void);
+int guard_page_test(void);
 
 #endif

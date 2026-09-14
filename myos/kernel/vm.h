@@ -19,6 +19,9 @@ int vm_free_page(void *virtual_address);
 void *vm_alloc_pages(size_t count);
 int vm_free_pages(void *virtual_address, size_t count);
 
+void *vm_alloc_guarded_pages(size_t count);
+int vm_free_guarded_pages(void *virtual_address, size_t count);
+
 void *kvmalloc(size_t size);
 void kvfree(void *ptr);
 
