@@ -3,43 +3,89 @@
 #include "screen.h"
 #include <stdint.h>
 
-#define PAGE_PRESENT  0x001
-#define PAGE_WRITABLE 0x002
+#define PAGE_ENTRIES      1024U
+#define PAGE_FRAME_MASK   0xFFFFF000U
+#define IDENTITY_MAP_SIZE (PAGE_ENTRIES * PAGE_SIZE)
 
-static uint32_t page_directory[1024]
+/* Page-fault error-code bits */
+#define PAGE_FAULT_PROTECTION    0x001U
+#define PAGE_FAULT_WRITE         0x002U
+#define PAGE_FAULT_USER          0x004U
+#define PAGE_FAULT_RESERVED_BIT  0x008U
+#define PAGE_FAULT_INSTRUCTION   0x010U
+
+static uint32_t page_directory[PAGE_ENTRIES]
     __attribute__((aligned(4096)));
 
-static uint32_t first_page_table[1024]
+static uint32_t first_page_table[PAGE_ENTRIES]
     __attribute__((aligned(4096)));
 
-static void load_page_directory(uint32_t address) {
+static int paging_enabled = 0;
+
+
+/*
+ * Page Fault Handler
+ */
+
+void page_fault_handler(uint32_t error_code)
+    __attribute__((noreturn));
+
+void page_fault_handler(uint32_t error_code)
+{
+    uint32_t fault_address;
+
     asm volatile(
-        "mov %0, %%cr3"
-        :
-        : "r"(address)
-        : "memory"
+        "mov %%cr2, %0"
+        : "=r"(fault_address)
     );
+
+    print("\n");
+    print("================================\n");
+    print("           PAGE FAULT\n");
+    print("================================\n");
+
+    print("Fault address: ");
+    print_hex(fault_address);
+    print("\n");
+
+    if (error_code & PAGE_FAULT_PROTECTION)
+        print("Type: PROTECTION VIOLATION\n");
+    else
+        print("Type: NOT PRESENT\n");
+
+    if (error_code & PAGE_FAULT_WRITE)
+        print("Access: WRITE\n");
+    else
+        print("Access: READ\n");
+
+    if (error_code & PAGE_FAULT_USER)
+        print("Mode: USER\n");
+    else
+        print("Mode: KERNEL\n");
+
+    if (error_code & PAGE_FAULT_RESERVED_BIT)
+        print("Reserved-bit violation: YES\n");
+
+    if (error_code & PAGE_FAULT_INSTRUCTION)
+        print("Instruction fetch: YES\n");
+
+    print("System halted.\n");
+
+    for (;;) {
+        asm volatile(
+            "cli\n"
+            "hlt"
+        );
+    }
 }
 
-static void enable_paging(void) {
-    uint32_t cr0;
 
-    asm volatile(
-        "mov %%cr0, %0"
-        : "=r"(cr0)
-    );
+/*
+ * Return whether paging is currently enabled.
+ */
 
-    cr0 |= 0x80000000U;
-
-    asm volatile(
-        "mov %0, %%cr0"
-        :
-        : "r"(cr0)
-        : "memory"
-    );
-}
-
-int paging_is_enabled(void) {
+int paging_is_enabled(void)
+{
     uint32_t cr0;
 
     asm volatile(
@@ -50,47 +96,182 @@ int paging_is_enabled(void) {
     return (cr0 & 0x80000000U) != 0;
 }
 
-void init_paging(void) {
-    print("Initializing paging...\n");
+
+/*
+ * Get page-table entry for a virtual address.
+ *
+ * Returns NULL if the corresponding page table doesn't exist.
+ */
+
+uint32_t *get_page(uint32_t virtual_addr)
+{
+    uint32_t directory_index;
+    uint32_t table_index;
+    uint32_t page_table;
+
+    directory_index = virtual_addr >> 22;
+    table_index = (virtual_addr >> 12) & 0x3FFU;
+
+    if (!(page_directory[directory_index] & PAGE_PRESENT))
+        return 0;
+
+    page_table = page_directory[directory_index] & PAGE_FRAME_MASK;
+
+    return &((uint32_t *)page_table)[table_index];
+}
+
+
+/*
+ * Map one virtual page to one physical page.
+ */
+
+int map_page(uint32_t virtual_addr,
+             uint32_t physical_addr,
+             uint32_t flags)
+{
+    uint32_t directory_index;
+    uint32_t table_index;
+    uint32_t *page_table;
+    void *new_table;
+
+    virtual_addr &= PAGE_FRAME_MASK;
+    physical_addr &= PAGE_FRAME_MASK;
+
+    directory_index = virtual_addr >> 22;
+    table_index = (virtual_addr >> 12) & 0x3FFU;
 
     /*
-     * Clear the page directory.
+     * Allocate a page table if one doesn't exist.
      */
-    for (int i = 0; i < 1024; i++)
-        page_directory[i] = 0;
+    if (!(page_directory[directory_index] & PAGE_PRESENT)) {
+        new_table = pmm_alloc_page();
+
+        if (!new_table)
+            return -1;
+
+        page_table = (uint32_t *)new_table;
+
+        memset(page_table, 0, PAGE_SIZE);
+
+        page_directory[directory_index] =
+            ((uint32_t)new_table & PAGE_FRAME_MASK) |
+            PAGE_PRESENT |
+            PAGE_WRITABLE |
+            (flags & PAGE_USER);
+    } else {
+        page_table =
+            (uint32_t *)(page_directory[directory_index] &
+                         PAGE_FRAME_MASK);
+    }
+
+    page_table[table_index] =
+        physical_addr |
+        (flags & 0xFFFU);
 
     /*
-     * Identity-map the first 4 MiB.
+     * Flush this virtual address from the TLB.
+     */
+    asm volatile(
+        "invlpg (%0)"
+        :
+        : "r"(virtual_addr)
+        : "memory"
+    );
+
+    return 0;
+}
+
+
+/*
+ * Unmap one virtual page.
+ */
+
+int unmap_page(uint32_t virtual_addr)
+{
+    uint32_t *page;
+
+    virtual_addr &= PAGE_FRAME_MASK;
+
+    page = get_page(virtual_addr);
+
+    if (!page)
+        return -1;
+
+    *page = 0;
+
+    asm volatile(
+        "invlpg (%0)"
+        :
+        : "r"(virtual_addr)
+        : "memory"
+    );
+
+    return 0;
+}
+
+
+/*
+ * Initialize paging.
+ *
+ * Identity maps the first 4 MiB.
+ */
+
+void init_paging(void)
+{
+    uint32_t i;
+
+    memset(page_directory, 0, PAGE_SIZE * 1024U);
+    memset(first_page_table, 0, PAGE_SIZE);
+
+    /*
+     * Identity-map the first 4 MiB:
      *
-     * Virtual address == physical address.
+     * virtual 0x00000000 -> physical 0x00000000
+     * virtual 0x00001000 -> physical 0x00001000
+     * ...
      */
-    for (int i = 0; i < 1024; i++) {
+    for (i = 0; i < PAGE_ENTRIES; i++) {
         first_page_table[i] =
-            ((uint32_t)i * PAGE_SIZE) |
+            (i * PAGE_SIZE) |
             PAGE_PRESENT |
             PAGE_WRITABLE;
     }
 
-    /*
-     * Page directory entry 0 points to the first
-     * page table at its physical address.
-     */
     page_directory[0] =
-        ((uint32_t)first_page_table) |
+        ((uint32_t)first_page_table & PAGE_FRAME_MASK) |
         PAGE_PRESENT |
         PAGE_WRITABLE;
 
     /*
-     * Our kernel is currently identity-mapped,
-     * so the physical address is also the address
-     * we can use for CR3.
+     * Load page directory into CR3.
      */
-    load_page_directory((uint32_t)page_directory);
+    asm volatile(
+        "mov %0, %%cr3"
+        :
+        : "r"(page_directory)
+        : "memory"
+    );
 
-    enable_paging();
+    /*
+     * Enable paging through CR0.PG.
+     */
+    {
+        uint32_t cr0;
 
-    if (paging_is_enabled())
-        print("Paging enabled.\n");
-    else
-        print("Paging FAILED.\n");
+        asm volatile(
+            "mov %%cr0, %0"
+            : "=r"(cr0)
+        );
+
+        cr0 |= 0x80000000U;
+
+        asm volatile(
+            "mov %0, %%cr0"
+            :
+            : "r"(cr0)
+            : "memory"
+        );
+    }
+
+    paging_enabled = 1;
 }
