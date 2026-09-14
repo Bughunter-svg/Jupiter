@@ -3,10 +3,10 @@
 #include "screen.h"
 #include <stdint.h>
 
-#define PAGE_ENTRIES    1024U
-#define PAGE_FRAME_MASK 0xFFFFF000U
-#define RECURSIVE_INDEX 1023U
-#define RECURSIVE_BASE  0xFFC00000U
+#define PAGE_ENTRIES        1024U
+#define PAGE_FRAME_MASK     0xFFFFF000U
+#define RECURSIVE_INDEX     1023U
+#define RECURSIVE_BASE      0xFFC00000U
 
 #define PAGE_FAULT_PROTECTION    0x001U
 #define PAGE_FAULT_WRITE         0x002U
@@ -15,12 +15,17 @@
 #define PAGE_FAULT_INSTRUCTION   0x010U
 
 #define PAGE_FAULT_TEST_ADDRESS  0x00800000U
+#define NULL_PAGE_ADDRESS        0x00000000U
 
 static uint32_t page_directory[PAGE_ENTRIES]
     __attribute__((aligned(4096)));
 
 static uint32_t first_page_table[PAGE_ENTRIES]
     __attribute__((aligned(4096)));
+
+static volatile int null_test_active = 0;
+static volatile int null_test_faulted = 0;
+static void *null_test_page = (void *)0;
 
 void page_fault_handler(uint32_t error_code)
 {
@@ -61,6 +66,33 @@ void page_fault_handler(uint32_t error_code)
 
     if (error_code & PAGE_FAULT_INSTRUCTION)
         print("Instruction fetch: YES\n");
+
+    if (null_test_active &&
+        fault_address == NULL_PAGE_ADDRESS &&
+        !(error_code & PAGE_FAULT_PROTECTION)) {
+
+        null_test_faulted = 1;
+
+        null_test_page = pmm_alloc_page();
+        physical_page = null_test_page;
+
+        if (physical_page) {
+            if (map_page(
+                    NULL_PAGE_ADDRESS,
+                    (uint32_t)physical_page,
+                    PAGE_PRESENT | PAGE_WRITABLE) == 0) {
+
+                print("Null page temporarily mapped.\n");
+                print("Page fault recovered.\n");
+                return;
+            }
+
+            pmm_free_page(physical_page);
+            null_test_page = (void *)0;
+        }
+
+        print("Null page test recovery FAILED.\n");
+    }
 
     if (fault_address == PAGE_FAULT_TEST_ADDRESS &&
         !(error_code & PAGE_FAULT_PROTECTION)) {
@@ -206,6 +238,55 @@ int unmap_page(uint32_t virtual_addr)
     return 0;
 }
 
+int null_page_test(void)
+{
+    volatile uint32_t *null_ptr;
+    uint32_t value;
+    uint32_t *page;
+    int result = 1;
+
+    null_test_active = 1;
+    null_test_faulted = 0;
+    null_test_page = (void *)0;
+
+    print("\nNull Page Protection Test\n");
+    print("=========================\n");
+    print("Accessing address: 0x00000000\n");
+
+    null_ptr = (volatile uint32_t *)NULL_PAGE_ADDRESS;
+
+    *null_ptr = 0x4E554C4CU;
+
+    value = *null_ptr;
+
+    if (!null_test_faulted)
+        result = 0;
+
+    if (value != 0x4E554C4CU)
+        result = 0;
+
+    if (unmap_page(NULL_PAGE_ADDRESS) != 0)
+        result = 0;
+
+    page = get_page(NULL_PAGE_ADDRESS);
+
+    if (page && (*page & PAGE_PRESENT))
+        result = 0;
+
+    if (null_test_page)
+        pmm_free_page(null_test_page);
+
+    null_test_page = (void *)0;
+    null_test_active = 0;
+
+    if (result)
+        print("Null page protection: PASS\n");
+    else
+        print("Null page protection: FAIL\n");
+
+    return result;
+}
+
 void init_paging(void)
 {
     uint32_t i;
@@ -213,7 +294,7 @@ void init_paging(void)
     memset(page_directory, 0, PAGE_SIZE);
     memset(first_page_table, 0, PAGE_SIZE);
 
-    for (i = 0; i < PAGE_ENTRIES; i++) {
+    for (i = 1; i < PAGE_ENTRIES; i++) {
         first_page_table[i] =
             (i * 0x1000U) |
             PAGE_PRESENT |

@@ -813,7 +813,7 @@ void execute_command(char *input)
         print("| [FILE]    append, info, cp, edit                       |\n");
         print("| [SYSTEM]  clear, echo, meminfo, ps, calc               |\n");
         print("| [MEMORY]  memtest, pmtest, pmm, paging, pf, vmtest      |\n");
-        print("| [MEMORY]  vmtest2, kheaptest, kheapstress              |\n");
+        print("| [MEMORY]  vmtest2, kheaptest, kheapstress, nulltest   |\n");
         print("| [SYSTEM]  run, time, timer, sleep, memmap, uptime       |\n");
         print("| [INFO]    cpuinfo, osinfo, status, df                  |\n");
         print("| [NETWORK] ping, ifconfig, arp                          |\n");
@@ -1086,6 +1086,10 @@ void execute_command(char *input)
 
         vm_multi_page_test();
 
+    }
+    
+    else if (strcmp(args[0], "nulltest") == 0) {
+        null_page_test();
     }
 
     else if (strcmp(args[0], "kheaptest") == 0) {
@@ -1449,7 +1453,7 @@ void kmain(unsigned int magic,
 
     init_timer();
 
-    disable_interrupts();
+    enable_interrupts();
 
     init_users();
 
