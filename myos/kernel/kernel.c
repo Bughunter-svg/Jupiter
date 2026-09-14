@@ -16,6 +16,9 @@
 #include "memory.h"
 #include "netcmds.h"
 #define LINE_SIZE 128
+#define PAGING_TEST_VIRTUAL_ADDRESS 0x00400000U
+#define PAGING_TEST_VALUE           0x4A555049U
+#define PAGE_FAULT_TEST_ADDRESS     0x00800000U
 
 // Forward declarations
 void print_memory_info();
@@ -201,6 +204,44 @@ void check_network_status() {
     }
 }
 
+static void paging_mapping_test(void) {
+    void *physical_page;
+    volatile uint32_t *mapped_page;
+    int passed;
+
+    physical_page = pmm_alloc_page();
+
+    if (!physical_page) {
+        print("Dynamic mapping test: FAIL\n");
+        return;
+    }
+
+    if (map_page(PAGING_TEST_VIRTUAL_ADDRESS,
+                 (uint32_t)physical_page,
+                 PAGE_PRESENT | PAGE_WRITABLE) < 0) {
+        pmm_free_page(physical_page);
+        print("Dynamic mapping test: FAIL\n");
+        return;
+    }
+
+    mapped_page = (volatile uint32_t *)PAGING_TEST_VIRTUAL_ADDRESS;
+    *mapped_page = PAGING_TEST_VALUE;
+    passed = (*mapped_page == PAGING_TEST_VALUE);
+
+    if (unmap_page(PAGING_TEST_VIRTUAL_ADDRESS) < 0) {
+        /* Keep the frame allocated if its mapping could not be removed. */
+        print("Dynamic mapping test: FAIL\n");
+        return;
+    }
+
+    pmm_free_page(physical_page);
+
+    if (passed)
+        print("Dynamic mapping test: PASS\n");
+    else
+        print("Dynamic mapping test: FAIL\n");
+}
+
 void execute_command(char *input) {
     // Simple argument parsing
     char* args[10];
@@ -236,7 +277,7 @@ void execute_command(char *input) {
         print("| [FILE]    create, read, delete, ls         		|\n");
         print("| [FILE]    append, info, cp, edit           		|\n");
         print("| [SYSTEM]  clear, echo, meminfo, ps, calc   		|\n");
-	print("| [MEMORY]   memtest, pmtest, pmm, paging     		|\n");
+	print("| [MEMORY]   memtest, pmtest, pmm, paging, pf 		|\n");
         print("| [SYSTEM]  run, time, timer, sleep,memmap, uptime   	|\n");
         print("| [INFO]    cpuinfo, osinfo, status, df      		|\n");
         print("| [NETWORK] ping, ifconfig, arp              		|\n");
@@ -345,8 +386,22 @@ void execute_command(char *input) {
     else if (strcmp(args[0], "paging") == 0) {
         if (paging_is_enabled())
             print("Paging: ENABLED\n");
-        else
+        else {
             print("Paging: DISABLED\n");
+            print("Dynamic mapping test: FAIL\n");
+            return;
+        }
+
+        paging_mapping_test();
+    }
+    else if (strcmp(args[0], "pf") == 0) {
+        volatile uint32_t *fault_address =
+            (volatile uint32_t *)PAGE_FAULT_TEST_ADDRESS;
+        volatile uint32_t value;
+
+        print("Triggering page fault...\n");
+        value = *fault_address;
+        (void)value;
     }
     else if (strcmp(args[0], "info") == 0 && argc > 1) {
         fs_info(args[1]);
