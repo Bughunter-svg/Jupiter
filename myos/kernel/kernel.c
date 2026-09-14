@@ -23,8 +23,6 @@
 #define PAGING_TEST_VALUE           0x4A555049U
 #define PAGE_FAULT_TEST_ADDRESS     0x00800000U
 
-
-/* Forward declarations */
 void print_memory_info();
 void manual_timer_test();
 void test_process();
@@ -34,13 +32,6 @@ void test_network_packets();
 void check_network_status();
 void memory_test(void);
 void execute_command(char *input);
-
-
-/*
- * ============================================================
- * Memory information
- * ============================================================
- */
 
 void print_memory_info()
 {
@@ -63,13 +54,6 @@ void print_memory_info()
     print(" bytes\n");
 }
 
-
-/*
- * ============================================================
- * Manual timer test
- * ============================================================
- */
-
 void manual_timer_test()
 {
     static int ticks = 0;
@@ -83,13 +67,6 @@ void manual_timer_test()
     }
 }
 
-
-/*
- * ============================================================
- * Process test
- * ============================================================
- */
-
 void test_process()
 {
     print(">>> PID 1 STARTED <<<\n");
@@ -100,13 +77,6 @@ void test_process()
     print(">>> PID 1 FINISHED <<<\n");
     print(">>> PID 1 RETURNING NOW <<<\n");
 }
-
-
-/*
- * ============================================================
- * Network detection test
- * ============================================================
- */
 
 void test_network_detection()
 {
@@ -132,13 +102,6 @@ void test_network_detection()
     }
 }
 
-
-/*
- * ============================================================
- * MAC address test
- * ============================================================
- */
-
 void test_mac_address()
 {
     print("Testing MAC address reading...\n");
@@ -162,13 +125,6 @@ void test_mac_address()
 
     outb(0x300 + 0x00, 0x00);
 }
-
-
-/*
- * ============================================================
- * Network packet test
- * ============================================================
- */
 
 void test_network_packets()
 {
@@ -270,13 +226,6 @@ void test_network_packets()
     }
 }
 
-
-/*
- * ============================================================
- * Network status
- * ============================================================
- */
-
 void check_network_status()
 {
     print("Network Status: ");
@@ -334,12 +283,378 @@ void check_network_status()
     }
 }
 
+static void vm_multi_page_test(void)
+{
+    volatile uint32_t *memory;
+    volatile uint32_t *memory2;
+    size_t i;
 
-/*
- * ============================================================
- * Paging mapping test
- * ============================================================
- */
+    print("\nMulti-Page Virtual Memory Test\n");
+    print("===============================\n");
+
+    memory = (volatile uint32_t *)vm_alloc_pages(4);
+
+    if (!memory) {
+        print("Allocation: FAIL\n");
+        return;
+    }
+
+    print("Base address: ");
+    print_hex((uint32_t)memory);
+    print("\n");
+
+    if ((uint32_t)&memory[1024] !=
+        (uint32_t)memory + 0x1000U) {
+
+        print("Contiguous virtual range: FAIL\n");
+
+        vm_free_pages((void *)memory, 4);
+        return;
+    }
+
+    print("Contiguous virtual range: PASS\n");
+
+    for (i = 0; i < 4; i++) {
+        volatile uint32_t *page =
+            (volatile uint32_t *)(
+                (uint32_t)memory +
+                (uint32_t)(i * 0x1000U)
+            );
+
+        *page = 0x4A555000U + (uint32_t)i;
+    }
+
+    for (i = 0; i < 4; i++) {
+        volatile uint32_t *page =
+            (volatile uint32_t *)(
+                (uint32_t)memory +
+                (uint32_t)(i * 0x1000U)
+            );
+
+        if (*page != 0x4A555000U + (uint32_t)i) {
+
+            print("Mapping/read/write: FAIL\n");
+
+            vm_free_pages((void *)memory, 4);
+            return;
+        }
+    }
+
+    print("Mapping/read/write: PASS\n");
+
+    if (vm_free_pages((void *)memory, 4) != 0) {
+        print("Free: FAIL\n");
+        return;
+    }
+
+    print("Free: PASS\n");
+
+    memory2 = (volatile uint32_t *)vm_alloc_pages(4);
+
+    if (!memory2) {
+        print("Reallocation: FAIL\n");
+        return;
+    }
+
+    if ((uint32_t)memory2 != (uint32_t)memory) {
+        print("Virtual range reuse: FAIL\n");
+        vm_free_pages((void *)memory2, 4);
+        return;
+    }
+
+    print("Virtual range reuse: PASS\n");
+
+    vm_free_pages((void *)memory2, 4);
+
+    print("Multi-page VMM test: PASS\n");
+}
+
+static void kernel_vmm_heap_test(void)
+{
+    size_t before;
+    size_t after_alloc;
+    size_t after_free;
+    size_t i;
+    volatile uint32_t *a;
+    volatile uint32_t *b;
+    volatile uint32_t *c;
+    volatile uint32_t *test;
+    int passed = 1;
+
+    print("\nKernel VMM Heap Test\n");
+    print("=====================\n");
+
+    before = vm_get_used_pages();
+
+    a = (volatile uint32_t *)kvmalloc(64);
+    b = (volatile uint32_t *)kvmalloc(4096);
+    c = (volatile uint32_t *)kvmalloc(10000);
+
+    if (!a || !b || !c) {
+        print("Allocation: FAIL\n");
+
+        if (a)
+            kvfree((void *)a);
+        if (b)
+            kvfree((void *)b);
+        if (c)
+            kvfree((void *)c);
+
+        return;
+    }
+
+    after_alloc = vm_get_used_pages();
+
+    if (after_alloc != before + 6)
+        passed = 0;
+
+    if (passed)
+        print("Allocation: PASS\n");
+    else
+        print("Allocation: FAIL\n");
+
+    *a = 0x11111111U;
+    *b = 0x22222222U;
+    *c = 0x33333333U;
+
+    if (*a != 0x11111111U)
+        passed = 0;
+    if (*b != 0x22222222U)
+        passed = 0;
+    if (*c != 0x33333333U)
+        passed = 0;
+
+    *((volatile uint8_t *)c + 9999) = 0x5AU;
+
+    if (*((volatile uint8_t *)c + 9999) != 0x5AU)
+        passed = 0;
+
+    if (passed)
+        print("Mapping/read/write: PASS\n");
+    else
+        print("Mapping/read/write: FAIL\n");
+
+    kvfree((void *)a);
+    kvfree((void *)b);
+    kvfree((void *)c);
+
+    after_free = vm_get_used_pages();
+
+    if (after_free != before)
+        passed = 0;
+
+    if (after_free == before)
+        print("VMM page reclamation: PASS\n");
+    else
+        print("VMM page reclamation: FAIL\n");
+
+    for (i = 0; i < 16; i++) {
+        test = (volatile uint32_t *)kvmalloc(1234);
+
+        if (!test) {
+            passed = 0;
+            break;
+        }
+
+        *test = 0x4A550000U + (uint32_t)i;
+
+        if (*test != 0x4A550000U + (uint32_t)i)
+            passed = 0;
+
+        kvfree((void *)test);
+
+        if (vm_get_used_pages() != before)
+            passed = 0;
+    }
+
+    if (passed)
+        print("Repeated allocations: PASS\n");
+    else
+        print("Repeated allocations: FAIL\n");
+
+    print("Kernel VMM heap test: ");
+
+    if (passed)
+        print("PASS\n");
+    else
+        print("FAIL\n");
+}
+
+static void kernel_vmm_heap_stress_test(void)
+{
+    size_t before;
+    size_t after_alloc;
+    size_t after_free;
+    size_t i;
+    size_t sizes[] = {
+        1,
+        100,
+        4095,
+        4096,
+        4097,
+        8192,
+        16384,
+        65536
+    };
+
+    void *blocks[8] = {0};
+
+    void *a = (void *)0;
+    void *b = (void *)0;
+    void *c = (void *)0;
+    void *d = (void *)0;
+    void *e = (void *)0;
+    void *f = (void *)0;
+
+    volatile uint8_t *test;
+
+    int passed = 1;
+    int variable_passed = 1;
+    int fragmentation_passed = 1;
+
+    print("\nKernel VMM Heap Stress Test\n");
+    print("============================\n");
+
+    before = vm_get_used_pages();
+
+    for (i = 0; i < 8; i++) {
+        blocks[i] = kvmalloc(sizes[i]);
+
+        if (!blocks[i]) {
+            print("Size allocation failed: ");
+            print_int((int)sizes[i]);
+            print(" bytes\n");
+
+            variable_passed = 0;
+            break;
+        }
+
+        test = (volatile uint8_t *)blocks[i];
+
+        test[0] = (uint8_t)(0x10U + i);
+	if (test[0] != (uint8_t)(0x10U + i)) {
+	    print("Size read/write failed: ");
+	    print_int((int)sizes[i]);
+	    print(" bytes\n");
+	    variable_passed = 0;
+	    break;
+	}
+	if (sizes[i] > 1) {
+	    test[sizes[i] - 1] = (uint8_t)(0x80U + i);
+	    if (test[sizes[i] - 1] != (uint8_t)(0x80U + i)) {
+		print("Size read/write failed: ");
+		print_int((int)sizes[i]);
+		print(" bytes\n");
+		variable_passed = 0;
+		break;
+	    }
+	}
+
+        print("Size ");
+        print_int((int)sizes[i]);
+        print(": PASS\n");
+    }
+
+    if (variable_passed)
+        print("Variable-size allocations: PASS\n");
+    else
+        print("Variable-size allocations: FAIL\n");
+
+    after_alloc = vm_get_used_pages();
+
+    for (i = 0; i < 8; i++) {
+        if (blocks[i])
+            kvfree(blocks[i]);
+    }
+
+    after_free = vm_get_used_pages();
+
+    if (after_free == before)
+        print("Stress allocation reclamation: PASS\n");
+    else {
+        print("Stress allocation reclamation: FAIL\n");
+        passed = 0;
+    }
+
+    if (after_alloc <= before)
+        variable_passed = 0;
+
+    a = kvmalloc(100);
+    b = kvmalloc(100);
+    c = kvmalloc(100);
+    d = kvmalloc(100);
+
+    if (!a || !b || !c || !d) {
+
+        fragmentation_passed = 0;
+
+        if (a)
+            kvfree(a);
+
+        if (b)
+            kvfree(b);
+
+        if (c)
+            kvfree(c);
+
+        if (d)
+            kvfree(d);
+
+    } else {
+
+        kvfree(b);
+        kvfree(d);
+
+        e = kvmalloc(100);
+        f = kvmalloc(100);
+
+        if (!e || !f) {
+
+            fragmentation_passed = 0;
+
+            if (e)
+                kvfree(e);
+
+            if (f)
+                kvfree(f);
+
+        } else {
+
+            if (e == a || e == c)
+                fragmentation_passed = 0;
+
+            if (f == a || f == c)
+                fragmentation_passed = 0;
+
+            kvfree(e);
+            kvfree(f);
+        }
+
+        kvfree(a);
+        kvfree(c);
+    }
+
+    if (vm_get_used_pages() != before)
+        fragmentation_passed = 0;
+
+    if (fragmentation_passed)
+        print("Fragmentation and hole reuse: PASS\n");
+    else
+        print("Fragmentation and hole reuse: FAIL\n");
+
+    if (!variable_passed)
+        passed = 0;
+
+    if (!fragmentation_passed)
+        passed = 0;
+
+    print("Kernel VMM heap stress test: ");
+
+    if (passed)
+        print("PASS\n");
+    else
+        print("FAIL\n");
+}
 
 static void paging_mapping_test(void)
 {
@@ -389,13 +704,6 @@ static void paging_mapping_test(void)
         print("Dynamic mapping test: FAIL\n");
 }
 
-
-/*
- * ============================================================
- * Command execution
- * ============================================================
- */
-
 void execute_command(char *input)
 {
     char *args[10];
@@ -404,10 +712,6 @@ void execute_command(char *input)
     int i = 0;
     int in_word = 0;
 
-
-    /*
-     * Parse input into arguments.
-     */
     while (input[i] && argc < 10) {
 
         if (input[i] != ' ') {
@@ -426,23 +730,11 @@ void execute_command(char *input)
         i++;
     }
 
-
-    /*
-     * Ensure last argument is terminated.
-     */
     if (in_word && i < LINE_SIZE)
         input[i] = '\0';
 
-
     if (argc == 0)
         return;
-
-
-    /*
-     * ========================================================
-     * HELP
-     * ========================================================
-     */
 
     if (strcmp(args[0], "help") == 0) {
 
@@ -451,6 +743,7 @@ void execute_command(char *input)
         print("| [FILE]    append, info, cp, edit                       |\n");
         print("| [SYSTEM]  clear, echo, meminfo, ps, calc               |\n");
         print("| [MEMORY]  memtest, pmtest, pmm, paging, pf, vmtest      |\n");
+        print("| [MEMORY]  vmtest2, kheaptest, kheapstress              |\n");
         print("| [SYSTEM]  run, time, timer, sleep, memmap, uptime       |\n");
         print("| [INFO]    cpuinfo, osinfo, status, df                  |\n");
         print("| [NETWORK] ping, ifconfig, arp                          |\n");
@@ -458,38 +751,20 @@ void execute_command(char *input)
         print("| [USER]    whoami, logout                               |\n");
         print("| [HELP]    help                                         |\n");
         print("==========================================================\n");
+
     }
-
-
-    /*
-     * ========================================================
-     * CLEAR
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "clear") == 0) {
 
         clear_screen();
+
     }
-
-
-    /*
-     * ========================================================
-     * CALCULATOR
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "calc") == 0) {
 
         calculator(argc, args);
+
     }
-
-
-    /*
-     * ========================================================
-     * ECHO
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "echo") == 0 && argc > 1) {
 
@@ -502,38 +777,20 @@ void execute_command(char *input)
         }
 
         print("\n");
+
     }
-
-
-    /*
-     * ========================================================
-     * MEMORY INFORMATION
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "meminfo") == 0) {
 
         print_memory_info();
+
     }
-
-
-    /*
-     * ========================================================
-     * MEMORY MAP
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "memmap") == 0) {
 
         mem_print_map();
+
     }
-
-
-    /*
-     * ========================================================
-     * CREATE
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "create") == 0 &&
              argc > 1) {
@@ -541,14 +798,8 @@ void execute_command(char *input)
         if (fs_create(args[1], "")) {
             launch_editor(args[1]);
         }
+
     }
-
-
-    /*
-     * ========================================================
-     * READ
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "read") == 0 &&
              argc > 1) {
@@ -558,51 +809,27 @@ void execute_command(char *input)
 
         print(content);
         print("\n");
+
     }
-
-
-    /*
-     * ========================================================
-     * DELETE
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "delete") == 0 &&
              argc > 1) {
 
         fs_delete(args[1]);
+
     }
-
-
-    /*
-     * ========================================================
-     * LIST FILES
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "ls") == 0) {
 
         fs_list();
+
     }
-
-
-    /*
-     * ========================================================
-     * PROCESS LIST
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "ps") == 0) {
 
         list_processes();
+
     }
-
-
-    /*
-     * ========================================================
-     * RUN PROCESS
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "run") == 0 &&
              argc > 1) {
@@ -616,40 +843,22 @@ void execute_command(char *input)
 
         if (pid >= 0)
             print("Process created successfully.\n");
+
     }
-
-
-    /*
-     * ========================================================
-     * YIELD
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "yield") == 0) {
 
         yield();
+
     }
-
-
-    /*
-     * ========================================================
-     * TIME
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "time") == 0) {
 
         print("Uptime: ");
         print_hex(get_ticks());
         print(" ms\n");
+
     }
-
-
-    /*
-     * ========================================================
-     * SLEEP
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "sleep") == 0 &&
              argc > 1) {
@@ -674,28 +883,16 @@ void execute_command(char *input)
         sleep(ms);
 
         print("Awake!\n");
+
     }
-
-
-    /*
-     * ========================================================
-     * TIMER
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "timer") == 0) {
 
         print("Timer ticks: ");
         print_hex(get_ticks());
         print("\n");
+
     }
-
-
-    /*
-     * ========================================================
-     * UPTIME
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "uptime") == 0) {
 
@@ -723,14 +920,8 @@ void execute_command(char *input)
 
         print_int((int)seconds);
         print("s\n");
+
     }
-
-
-    /*
-     * ========================================================
-     * APPEND
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "append") == 0 &&
              argc > 2) {
@@ -753,26 +944,14 @@ void execute_command(char *input)
             args[1],
             content_start
         );
+
     }
-
-
-    /*
-     * ========================================================
-     * PMM
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "pmm") == 0) {
 
         pmm_print_stats();
+
     }
-
-
-    /*
-     * ========================================================
-     * PAGING
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "paging") == 0) {
 
@@ -789,27 +968,15 @@ void execute_command(char *input)
         }
 
         paging_mapping_test();
+
     }
-
-
-    /*
-     * ========================================================
-     * FILE INFO
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "info") == 0 &&
              argc > 1) {
 
         fs_info(args[1]);
+
     }
-
-
-    /*
-     * ========================================================
-     * PAGE FAULT TEST
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "pf") == 0) {
 
@@ -820,20 +987,8 @@ void execute_command(char *input)
 
         print("Triggering page fault...\n");
 
-        /*
-         * First access is a WRITE.
-         *
-         * The page is intentionally unmapped.
-         * The page fault handler allocates a physical
-         * page and maps it.
-         *
-         * After iret, the CPU retries this instruction.
-         */
         *fault_address = 0x4A555049U;
 
-        /*
-         * Read the value back from the newly mapped page.
-         */
         value = *fault_address;
 
         print("Recovered page value: ");
@@ -844,14 +999,8 @@ void execute_command(char *input)
             print("Page fault recovery test: PASS\n");
         else
             print("Page fault recovery test: FAIL\n");
+
     }
-
-
-    /*
-     * ========================================================
-     * COPY
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "cp") == 0 &&
              argc > 2) {
@@ -860,111 +1009,75 @@ void execute_command(char *input)
             args[1],
             args[2]
         );
+
     }
 
+    else if (strcmp(args[0], "vmtest2") == 0) {
 
-    /*
-     * ========================================================
-     * EDIT
-     * ========================================================
-     */
+        vm_multi_page_test();
+
+    }
+
+    else if (strcmp(args[0], "kheaptest") == 0) {
+
+        kernel_vmm_heap_test();
+
+    }
+
+    else if (strcmp(args[0], "kheapstress") == 0) {
+
+        kernel_vmm_heap_stress_test();
+
+    }
 
     else if (strcmp(args[0], "edit") == 0 &&
              argc > 1) {
 
         launch_editor(args[1]);
+
     }
-
-
-    /*
-     * ========================================================
-     * CPU INFO
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "cpuinfo") == 0) {
 
         show_cpuinfo();
+
     }
-
-
-    /*
-     * ========================================================
-     * OS INFO
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "osinfo") == 0) {
 
         show_osinfo();
+
     }
-
-
-    /*
-     * ========================================================
-     * STATUS
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "status") == 0) {
 
         show_status();
+
     }
-
-
-    /*
-     * ========================================================
-     * DISK INFO
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "df") == 0) {
 
         show_diskinfo();
+
     }
-
-
-    /*
-     * ========================================================
-     * PING
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "ping") == 0) {
 
         cmd_ping(argc, args);
+
     }
-
-
-    /*
-     * ========================================================
-     * IFCONFIG
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "ifconfig") == 0) {
 
         cmd_ifconfig();
+
     }
-
-
-    /*
-     * ========================================================
-     * MEMORY TEST
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "memtest") == 0) {
 
         memory_test();
+
     }
-
-
-    /*
-     * ========================================================
-     * VM TEST
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "vmtest") == 0) {
 
@@ -977,10 +1090,6 @@ void execute_command(char *input)
         print("\nVirtual Memory Test\n");
         print("===================\n");
 
-
-        /*
-         * Allocate three virtual pages.
-         */
         page1 =
             (volatile uint32_t *)vm_alloc_page();
 
@@ -990,10 +1099,6 @@ void execute_command(char *input)
         page3 =
             (volatile uint32_t *)vm_alloc_page();
 
-
-        /*
-         * Display virtual addresses.
-         */
         print("Page 1: ");
         print_hex((uint32_t)page1);
         print("\n");
@@ -1006,10 +1111,6 @@ void execute_command(char *input)
         print_hex((uint32_t)page3);
         print("\n");
 
-
-        /*
-         * Verify allocation.
-         */
         if (!page1 ||
             !page2 ||
             !page3) {
@@ -1028,18 +1129,10 @@ void execute_command(char *input)
             return;
         }
 
-
-        /*
-         * Write different values to each page.
-         */
         *page1 = 0x11111111U;
         *page2 = 0x22222222U;
         *page3 = 0x33333333U;
 
-
-        /*
-         * Verify mappings.
-         */
         if (*page1 != 0x11111111U)
             passed = 0;
 
@@ -1049,16 +1142,11 @@ void execute_command(char *input)
         if (*page3 != 0x33333333U)
             passed = 0;
 
-
         if (passed)
             print("Mapping/read/write: PASS\n");
         else
             print("Mapping/read/write: FAIL\n");
 
-
-        /*
-         * Free all pages.
-         */
         if (vm_free_page((void *)page1) < 0)
             passed = 0;
 
@@ -1068,12 +1156,10 @@ void execute_command(char *input)
         if (vm_free_page((void *)page3) < 0)
             passed = 0;
 
-
         if (passed)
             print("Free/reclaim: PASS\n");
         else
             print("Free/reclaim: FAIL\n");
-
 
         print("VMM test: ");
 
@@ -1081,14 +1167,8 @@ void execute_command(char *input)
             print("PASS\n");
         else
             print("FAIL\n");
+
     }
-
-
-    /*
-     * ========================================================
-     * PMM ALLOCATION TEST
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "pmtest") == 0) {
 
@@ -1100,7 +1180,6 @@ void execute_command(char *input)
 
         void *page2 =
             pmm_alloc_page();
-
 
         print("\nPMM Allocation Test\n");
         print("===================\n");
@@ -1121,38 +1200,26 @@ void execute_command(char *input)
         print_int(
             (int)pmm_get_free_pages()
         );
-        print("\n");
 
+        print("\n");
 
         pmm_free_page(page1);
         pmm_free_page(page2);
-
 
         print("Free after free: ");
         print_int(
             (int)pmm_get_free_pages()
         );
+
         print("\n");
+
     }
-
-
-    /*
-     * ========================================================
-     * ARP
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "arp") == 0) {
 
         cmd_arp(argc, args);
+
     }
-
-
-    /*
-     * ========================================================
-     * NETWORK
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "net") == 0) {
 
@@ -1173,14 +1240,8 @@ void execute_command(char *input)
 
             check_network_status();
         }
+
     }
-
-
-    /*
-     * ========================================================
-     * WHOAMI
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "whoami") == 0) {
 
@@ -1202,14 +1263,8 @@ void execute_command(char *input)
 
             print("Not logged in\n");
         }
+
     }
-
-
-    /*
-     * ========================================================
-     * LOGOUT
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "logout") == 0) {
 
@@ -1221,14 +1276,8 @@ void execute_command(char *input)
              i++) {}
 
         asm volatile("jmp kmain");
+
     }
-
-
-    /*
-     * ========================================================
-     * SHUTDOWN
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "shutdown") == 0) {
 
@@ -1236,14 +1285,8 @@ void execute_command(char *input)
 
         while (1)
             asm volatile("hlt");
+
     }
-
-
-    /*
-     * ========================================================
-     * REBOOT
-     * ========================================================
-     */
 
     else if (strcmp(args[0], "reboot") == 0) {
 
@@ -1254,14 +1297,8 @@ void execute_command(char *input)
              i++) {}
 
         asm volatile("jmp kmain");
+
     }
-
-
-    /*
-     * ========================================================
-     * UNKNOWN COMMAND
-     * ========================================================
-     */
 
     else {
 
@@ -1270,13 +1307,6 @@ void execute_command(char *input)
         print("\n");
     }
 }
-
-
-/*
- * ============================================================
- * Basic memory allocation test
- * ============================================================
- */
 
 void memory_test()
 {
@@ -1298,13 +1328,6 @@ void memory_test()
     print_memory_info();
 }
 
-
-/*
- * ============================================================
- * Kernel entry point
- * ============================================================
- */
-
 void kmain(unsigned int magic,
            unsigned int *mb_info)
 {
@@ -1314,10 +1337,6 @@ void kmain(unsigned int magic,
 
     boot_count++;
 
-
-    /*
-     * Verify Multiboot magic.
-     */
     if (magic != 0x2BADB002) {
 
         print(
@@ -1327,13 +1346,8 @@ void kmain(unsigned int magic,
         return;
     }
 
-
     char line[LINE_SIZE];
 
-
-    /*
-     * Clear screen and show boot UI.
-     */
     clear_screen();
 
     show_boot_animation();
@@ -1342,13 +1356,6 @@ void kmain(unsigned int magic,
     print("Boot #");
     print_hex(boot_count);
     print("\n");
-
-
-    /*
-     * ========================================================
-     * Initialize memory subsystem
-     * ========================================================
-     */
 
     mem_init();
 
@@ -1360,13 +1367,6 @@ void kmain(unsigned int magic,
 
     vm_init();
 
-
-    /*
-     * ========================================================
-     * Initialize remaining systems
-     * ========================================================
-     */
-
     fs_init();
 
     init_scheduler();
@@ -1377,13 +1377,6 @@ void kmain(unsigned int magic,
 
     disable_interrupts();
 
-
-    /*
-     * ========================================================
-     * Users / login
-     * ========================================================
-     */
-
     init_users();
 
     show_login_screen();
@@ -1391,32 +1384,14 @@ void kmain(unsigned int magic,
     print("Welcome to JupiterOS Shell!\n");
     print("Interrupts: DISABLED (Safe Mode)\n");
 
-
-    /*
-     * ========================================================
-     * Network
-     * ========================================================
-     */
-
     network_init();
 
     print("System ready\n");
-
-
-    /*
-     * ========================================================
-     * Main shell
-     * ========================================================
-     */
 
     while (1) {
 
         manual_timer_test();
 
-
-        /*
-         * Display username in prompt.
-         */
         int current_user =
             get_current_user_id();
 
@@ -1433,31 +1408,15 @@ void kmain(unsigned int magic,
             print("> ");
         }
 
-
-        /*
-         * Read command.
-         */
         get_line(
             line,
             LINE_SIZE
         );
 
-
         if (line[0] == 0)
             continue;
 
-
-        /*
-         * Execute command.
-         */
         execute_command(line);
-
-
-        /*
-         * ====================================================
-         * Check for network packets
-         * ====================================================
-         */
 
         uint8_t buffer[1514];
 
@@ -1478,7 +1437,6 @@ void kmain(unsigned int magic,
                 uint16_t eth_type =
                     ntohs(eth->type);
 
-
                 if (eth_type == ETH_TYPE_ARP) {
 
                     handle_arp_packet(
@@ -1496,10 +1454,6 @@ void kmain(unsigned int magic,
             }
         }
 
-
-        /*
-         * Small delay to prevent CPU hogging.
-         */
         for (int i = 0;
              i < 10000;
              i++)
