@@ -611,6 +611,23 @@ int guard_page_test(void)
     return result;
 }
 
+void general_protection_handler(uint32_t error_code)
+{
+    print("\nGENERAL PROTECTION FAULT\n");
+    print("=========================\n");
+    print("Error code: ");
+    print_hex(error_code);
+    print("\n");
+    print("System halted.\n");
+
+    for (;;) {
+        asm volatile(
+            "cli\n"
+            "hlt"
+        );
+    }
+}
+
 void init_paging(void)
 {
     uint32_t i;

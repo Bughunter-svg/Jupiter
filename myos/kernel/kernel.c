@@ -1,3 +1,4 @@
+#include "ring3.h"
 #include "vm.h"
 #include "paging.h"
 #include "screen.h"
@@ -7,6 +8,8 @@
 #include "process.h"
 #include "timer.h"
 #include "interrupts.h"
+#include "gdt.h"
+#include "tss.h"
 #include "splash.h"
 #include "system.h"
 #include "ports.h"
@@ -812,11 +815,12 @@ void execute_command(char *input)
         print("| [FILE]    create, read, delete, ls                     |\n");
         print("| [FILE]    append, info, cp, edit                       |\n");
         print("| [SYSTEM]  clear, echo, meminfo, ps, calc               |\n");
-        print("| [MEMORY]  memtest, pmtest, pmm, paging, pf, vmtest      |\n");
-        print("| [MEMORY]  vmtest2, kheaptest, kheapstress, nulltest   |\n");
-        print("| [MEMORY]  rotest, guardtest                           |\n");
-        print("| [MEMORY]  rotest                                      |\n");
-        print("| [SYSTEM]  run, time, timer, sleep, memmap, uptime       |\n");
+        print("| [MEMORY]  memtest, pmtest, pmm, paging, pf, vmtest     |\n");
+        print("| [MEMORY]  vmtest2, kheaptest, kheapstress, nulltest   	|\n");
+        print("| [MEMORY]  rotest, guardtest                           	|\n");
+        print("| [MEMORY]  rotest                                      	|\n");
+        print("| [MEMORY]  ring3test                                  	|\n");
+        print("| [SYSTEM]  run, time, timer, sleep, memmap, uptime      |\n");
         print("| [INFO]    cpuinfo, osinfo, status, df                  |\n");
         print("| [NETWORK] ping, ifconfig, arp                          |\n");
         print("| [NETWORK] net, net test, net send                      |\n");
@@ -830,6 +834,10 @@ void execute_command(char *input)
 
         clear_screen();
 
+    }
+    
+    else if (strcmp(args[0], "ring3test") == 0) {
+	ring3_test();
     }
 
     else if (strcmp(args[0], "calc") == 0) {
@@ -1459,6 +1467,8 @@ void kmain(unsigned int magic,
 
     init_scheduler();
 
+    init_gdt();
+    init_tss();
     init_interrupts();
 
     init_timer();
