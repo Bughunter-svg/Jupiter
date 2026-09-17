@@ -1363,16 +1363,9 @@ void execute_command(char *input)
     }
 
     else if (strcmp(args[0], "logout") == 0) {
-
-        print("Logging out...\n");
-        print("System will reboot to login screen\n");
-
-        for (volatile int i = 0;
-             i < 3000000;
-             i++) {}
-
-        asm volatile("jmp kmain");
-
+	print("Logging out...\n");
+	logout_user();
+	show_login_screen();
     }
 
     else if (strcmp(args[0], "shutdown") == 0) {

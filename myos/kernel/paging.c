@@ -9,6 +9,23 @@
 #define RECURSIVE_INDEX     1023U
 #define RECURSIVE_BASE      0xFFC00000U
 
+/*
+ * Self-map address: with PDE[RECURSIVE_INDEX] pointing at the directory
+ * itself, accessing 0xFFC00000 + dirIdx*PAGE_SIZE gives you PAGE TABLE
+ * #dirIdx's PTE array (used by get_page()/map_page() below - correct).
+ *
+ * To instead read/write the DIRECTORY's own PDE entries as raw data, you
+ * have to go through the self-map TWICE: dirIdx=1023 (self) AND
+ * tableIdx=1023 (self again). That address is RECURSIVE_BASE +
+ * RECURSIVE_INDEX*PAGE_SIZE, i.e. 0xFFFFF000.
+ *
+ * paging_create_address_space() previously used RECURSIVE_BASE directly
+ * for this, which actually landed on whatever PDE[0] points to (the
+ * kernel's real, live first_page_table) instead of the new directory -
+ * silently corrupting the running kernel's own identity map.
+ */
+#define PD_SELF_MAP         0xFFFFF000U
+
 #define PAGE_FAULT_PROTECTION    0x001U
 #define PAGE_FAULT_WRITE         0x002U
 #define PAGE_FAULT_USER          0x004U
@@ -677,4 +694,79 @@ void init_paging(void)
             : "memory"
         );
     }
+}
+
+uint32_t paging_get_current_cr3(void)
+{
+    uint32_t cr3;
+
+    asm volatile (
+        "mov %%cr3, %0"
+        : "=r"(cr3)
+    );
+
+    return cr3;
+}
+
+uint32_t paging_create_address_space(void)
+{
+    void *new_pd_page;
+    uint32_t new_pd_phys;
+    uint32_t *new_pd;
+    int i;
+
+    print("AS1: Allocating page directory...\n");
+
+    new_pd_page = pmm_alloc_page();
+
+    if (!new_pd_page) {
+        print("AS2: PMM allocation FAILED\n");
+        return 0;
+    }
+
+    print("AS2: PD page allocated\n");
+
+    new_pd_phys = (uint32_t)new_pd_page;
+
+    print("AS3: PD physical address: ");
+    print_hex(new_pd_phys);
+    print("\n");
+
+    new_pd = (uint32_t *)new_pd_phys;
+
+    print("AS4: Initializing new page directory\n");
+
+    for (i = 0; i < PAGE_ENTRIES; i++)
+        new_pd[i] = 0;
+
+    print("AS5: New PD cleared\n");
+
+    for (i = 0; i < RECURSIVE_INDEX; i++)
+        new_pd[i] = page_directory[i];
+
+    print("AS6: Kernel mappings copied\n");
+
+    new_pd[RECURSIVE_INDEX] =
+        (new_pd_phys & PAGE_FRAME_MASK) |
+        PAGE_PRESENT |
+        PAGE_WRITABLE;
+
+    print("AS7: New recursive mapping installed\n");
+
+    return new_pd_phys;
+}
+
+int paging_switch_address_space(uint32_t cr3)
+{
+    if (!cr3)
+        return -1;
+
+    asm volatile (
+        "mov %0, %%cr3"
+        :
+        : "r"(cr3)
+        : "memory"
+    );
+
+    return 0;
 }

@@ -11,6 +11,7 @@ typedef struct {
     int is_admin;
 } user_t;
 
+void logout_user();
 void init_users();
 int authenticate_user(const char* username, const char* password);
 void add_user(const char* username, const char* password, int is_admin);

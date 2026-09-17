@@ -1,98 +1,94 @@
 #include "ring3.h"
 #include "paging.h"
-#include "memory.h"
 #include "screen.h"
 #include <stdint.h>
 
-#define USER_CODE_ADDRESS  0x00400000U
-#define USER_STACK_ADDRESS 0x00800000U
-
-extern unsigned char user_start[];
-extern unsigned char user_end[];
-extern void enter_ring3(unsigned int user_stack);
-
 uint32_t ring3_kernel_esp;
-
-static void copy_user_code(void *destination)
-{
-    unsigned char *dst = (unsigned char *)destination;
-    unsigned char *src = user_start;
-    unsigned int size = (unsigned int)(user_end - user_start);
-    unsigned int i;
-
-    for (i = 0; i < size; i++)
-        dst[i] = src[i];
-}
 
 void ring3_test(void)
 {
-    void *code_page;
-    void *stack_page;
-    unsigned int user_stack;
+    uint32_t new_cr3;
+    uint32_t old_cr3;
 
-    print("\nRing 3 Test\n");
-    print("===========\n");
+    print("\nCR3 SWITCH DEBUG\n");
+    print("================\n");
 
-    code_page = pmm_alloc_page();
+    old_cr3 = paging_get_current_cr3();
 
-    if (!code_page) {
-        print("User code page allocation: FAIL\n");
+    print("Old CR3: ");
+    print_hex(old_cr3);
+    print("\n");
+
+    new_cr3 = paging_create_address_space();
+
+    if (!new_cr3) {
+        print("CREATE FAILED\n");
         return;
     }
 
-    stack_page = pmm_alloc_page();
+    print("New CR3: ");
+    print_hex(new_cr3);
+    print("\n");
 
-    if (!stack_page) {
-        pmm_free_page(code_page);
-        print("User stack page allocation: FAIL\n");
-        return;
-    }
+    print("Switching now...\n");
 
-    if (map_page(
-            USER_CODE_ADDRESS,
-            (unsigned int)code_page,
-            PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER) < 0) {
+    /*
+     * NOTE: we do NOT cli/hlt forever here. This was the bug:
+     * the old code switched CR3 and then parked the CPU in an
+     * infinite hlt loop, never returning to the caller (the shell).
+     * Only interrupts (timer/keyboard) could still run, and their
+     * side effects (e.g. redrawing the prompt) made it *look* like
+     * the system had "looped back to login", when really the CPU
+     * was permanently stuck here.
+     */
+    asm volatile(
+        "cli\n"
+        "mov %0, %%cr3\n"
+        :
+        : "r"(new_cr3)
+        : "memory"
+    );
 
-        pmm_free_page(code_page);
-        pmm_free_page(stack_page);
+    print("CR3 SWITCH PASSED\n");
 
-        print("User code mapping: FAIL\n");
-        return;
-    }
+    print("Current CR3: ");
+    print_hex(paging_get_current_cr3());
+    print("\n");
 
-    if (map_page(
-            USER_STACK_ADDRESS,
-            (unsigned int)stack_page,
-            PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER) < 0) {
+    /*
+     * Restore the original address space before handing control
+     * back, so the shell / rest of the kernel keeps running against
+     * the mappings it expects.
+     */
+    asm volatile(
+        "mov %0, %%cr3\n"
+        :
+        : "r"(old_cr3)
+        : "memory"
+    );
 
-        unmap_page(USER_CODE_ADDRESS);
-        pmm_free_page(code_page);
-        pmm_free_page(stack_page);
+    asm volatile("sti");
 
-        print("User stack mapping: FAIL\n");
-        return;
-    }
+    print("Restored original CR3: ");
+    print_hex(paging_get_current_cr3());
+    print("\n");
+    print("ring3test complete, returning to shell.\n");
 
-    print("Copying user code...\n");
-
-    copy_user_code((void *)USER_CODE_ADDRESS);
-
-    print("User code copy: PASS\n");
-    print("User code mapping: PASS\n");
-    print("User stack mapping: PASS\n");
-    print("Entering Ring 3...\n");
-
-    user_stack = USER_STACK_ADDRESS + 0x1000U;
-
-    enter_ring3(user_stack);
-
-    print("Returned from Ring 3.\n");
-
-    unmap_page(USER_CODE_ADDRESS);
-    unmap_page(USER_STACK_ADDRESS);
-
-    pmm_free_page(code_page);
-    pmm_free_page(stack_page);
-
-    print("Ring 3 test complete.\n");
+    /*
+     * Falls through and returns normally now — no infinite hlt loop.
+     *
+     * NOTE: this still doesn't perform a *real* ring-3 transition.
+     * enter_ring3 (in ring3_enter.asm) is currently never called from
+     * anywhere in the kernel. To actually run code in ring 3 you'd
+     * need to:
+     *   1. map a code page for the user routine at some user-space
+     *      virtual address (e.g. 0x00400000) inside new_cr3's
+     *      directory, with PAGE_USER set
+     *   2. switch to new_cr3
+     *   3. call enter_ring3(user_stack_top) so it IRETs into that
+     *      mapped code at CPL=3
+     *   4. have that user code return via a syscall (int 0x80) that
+     *      restores kernel CR3/state, rather than switching CR3 back
+     *      directly from ring 0 like this debug test does
+     */
 }

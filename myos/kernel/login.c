@@ -127,6 +127,10 @@ int get_current_user_id() {
     return current_user_id;
 }
 
+void logout_user() {
+    current_user_id = -1;
+}
+
 int is_current_user_admin() {
     if (current_user_id >= 0 && current_user_id < user_count) {
         return users[current_user_id].is_admin;
