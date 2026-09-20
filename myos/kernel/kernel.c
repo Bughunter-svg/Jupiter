@@ -820,7 +820,8 @@ void execute_command(char *input)
         print("| [MEMORY]  rotest, guardtest                           	|\n");
         print("| [MEMORY]  rotest                                      	|\n");
         print("| [MEMORY]  ring3test                                  	|\n");
-        print("| [SYSTEM]  run, time, timer, sleep, memmap, uptime      |\n");
+        print("| [SYSTEM]  run, ring3proc, time, timer, sleep, memmap   |\n");
+        print("| [SYSTEM]  uptime                                       |\n");
         print("| [INFO]    cpuinfo, osinfo, status, df                  |\n");
         print("| [NETWORK] ping, ifconfig, arp                          |\n");
         print("| [NETWORK] net, net test, net send                      |\n");
@@ -922,7 +923,23 @@ void execute_command(char *input)
             );
 
         if (pid >= 0)
-            print("Process created successfully.\n");
+            print("Process created successfully.\\n");
+
+    }
+
+    else if (strcmp(args[0], "ring3proc") == 0 &&
+             argc > 1) {
+
+        int pid =
+            create_ring3_process(
+                args[1],
+                1
+            );
+
+        if (pid >= 0) {
+            print("Ring3 process created successfully.\n");
+            yield();
+        }
 
     }
 

@@ -1,6 +1,7 @@
 bits 32
 
 global enter_ring3
+
 extern ring3_kernel_esp
 
 enter_ring3:
@@ -20,4 +21,5 @@ enter_ring3:
     push 0x202
     push 0x23
     push 0x00400000
-    iret
+
+    iretd

@@ -1,3 +1,5 @@
+bits 32
+
 section .text
 global switch_task_asm
 
@@ -12,7 +14,11 @@ switch_task_asm:
 
     mov [eax + 24], esp
 
-    mov esp, [edx + 24]
+    mov ecx, [edx + 24]
+    mov esp, ecx
+
+    mov ecx, [edx + 40]
+    mov cr3, ecx
 
     pop edi
     pop esi

@@ -227,12 +227,14 @@ uint32_t *get_page(uint32_t virtual_addr)
 {
     uint32_t directory_index;
     uint32_t table_index;
+    uint32_t *current_page_directory;
     uint32_t *page_table;
 
     directory_index = virtual_addr >> 22;
     table_index = (virtual_addr >> 12) & 0x3FFU;
+    current_page_directory = (uint32_t *)PD_SELF_MAP;
 
-    if (!(page_directory[directory_index] & PAGE_PRESENT))
+    if (!(current_page_directory[directory_index] & PAGE_PRESENT))
         return 0;
 
     page_table =
@@ -250,6 +252,7 @@ int map_page(uint32_t virtual_addr,
 {
     uint32_t directory_index;
     uint32_t table_index;
+    uint32_t *current_page_directory;
     uint32_t *page_table;
     void *new_table;
 
@@ -258,14 +261,15 @@ int map_page(uint32_t virtual_addr,
 
     directory_index = virtual_addr >> 22;
     table_index = (virtual_addr >> 12) & 0x3FFU;
+    current_page_directory = (uint32_t *)PD_SELF_MAP;
 
-    if (!(page_directory[directory_index] & PAGE_PRESENT)) {
+    if (!(current_page_directory[directory_index] & PAGE_PRESENT)) {
         new_table = pmm_alloc_page();
 
         if (!new_table)
             return -1;
 
-        page_directory[directory_index] =
+        current_page_directory[directory_index] =
             ((uint32_t)new_table & PAGE_FRAME_MASK) |
             PAGE_PRESENT |
             PAGE_WRITABLE |
@@ -284,6 +288,9 @@ int map_page(uint32_t virtual_addr,
                 RECURSIVE_BASE +
                 (directory_index * PAGE_SIZE)
             );
+
+        if (flags & PAGE_USER)
+            current_page_directory[directory_index] |= PAGE_USER;
     }
 
     page_table[table_index] =
