@@ -117,7 +117,7 @@ int create_process(void (*entry)(void), const char *name, int priority) {
     int pid = process_count++;
     ProcessControlBlock *pcb = &pcbs[pid];
 
-    void *stack_mem = kmalloc(STACK_SIZE);
+    void *stack_mem = kvmalloc(STACK_SIZE);
 
     if (!stack_mem) {
         print("Error: No memory for process stack\n");
@@ -213,12 +213,15 @@ int create_ring3_process(const char *name, int priority) {
         return -1;
     }
 
+    asm volatile("cli");
+
     new_cr3 = paging_create_address_space();
     if (!new_cr3) {
         print("Error: failed to create address space\n");
         kvfree(stack_mem);
         pmm_free_page(code_page);
         pmm_free_page(stack_page);
+        asm volatile("sti");
         return -1;
     }
 
@@ -233,6 +236,7 @@ int create_ring3_process(const char *name, int priority) {
     if (map_page(RING3_CODE_VADDR, (uint32_t)code_page, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER) != 0) {
         print("Error: failed to map ring3 code page\n");
         paging_switch_address_space(kernel_cr3);
+        asm volatile("sti");
         kvfree(stack_mem);
         pmm_free_page(code_page);
         pmm_free_page(stack_page);
@@ -242,6 +246,7 @@ int create_ring3_process(const char *name, int priority) {
     if (map_page(RING3_STACK_VADDR, (uint32_t)stack_page, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER) != 0) {
         print("Error: failed to map ring3 stack page\n");
         paging_switch_address_space(kernel_cr3);
+        asm volatile("sti");
         kvfree(stack_mem);
         pmm_free_page(code_page);
         pmm_free_page(stack_page);
@@ -264,8 +269,11 @@ int create_ring3_process(const char *name, int priority) {
 
     if (paging_switch_address_space(kernel_cr3) != 0) {
         print("Error: failed to restore kernel address space\n");
+        asm volatile("sti");
         return -1;
     }
+
+    asm volatile("sti");
 
     pid = process_count++;
     pcb = &pcbs[pid];
