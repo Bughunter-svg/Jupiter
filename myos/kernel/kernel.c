@@ -820,7 +820,8 @@ void execute_command(char *input)
         print("| [MEMORY]  rotest, guardtest                           	|\n");
         print("| [MEMORY]  rotest                                      	|\n");
         print("| [MEMORY]  ring3test                                  	|\n");
-        print("| [SYSTEM]  run, ring3proc, time, timer, sleep, memmap   |\n");
+        print("| [SYSTEM]  run, ring3proc, wait, time, timer, sleep     |\n");
+        print("| [SYSTEM]  memmap, uptime                              |\n");
         print("| [SYSTEM]  uptime                                       |\n");
         print("| [INFO]    cpuinfo, osinfo, status, df                  |\n");
         print("| [NETWORK] ping, ifconfig, arp                          |\n");
@@ -946,6 +947,30 @@ void execute_command(char *input)
     else if (strcmp(args[0], "yield") == 0) {
 
         yield();
+
+    }
+
+    else if (strcmp(args[0], "wait") == 0 &&
+             argc > 1) {
+
+        int pid = 0;
+        char *p = args[1];
+
+        while (*p >= '0' && *p <= '9') {
+            pid = pid * 10 + (*p - '0');
+            p++;
+        }
+
+        int result = wait_process(pid);
+
+        if (result == 0)
+            print("Process reaped successfully.\n");
+        else if (result == -2)
+            print("Process is not a zombie.\n");
+        else if (result == -3)
+            print("Process is not a child of the current process.\n");
+        else
+            print("Process reaping failed.\n");
 
     }
 

@@ -763,6 +763,47 @@ uint32_t paging_create_address_space(void)
     return new_pd_phys;
 }
 
+int paging_destroy_address_space(uint32_t cr3)
+{
+    uint32_t physical_cr3;
+    uint32_t *target_pd;
+    int i;
+
+    physical_cr3 = cr3 & PAGE_FRAME_MASK;
+
+    if (!physical_cr3)
+        return -1;
+
+    if (physical_cr3 == ((uint32_t)page_directory & PAGE_FRAME_MASK))
+        return -2;
+
+    if (paging_get_current_cr3() == physical_cr3)
+        return -3;
+
+    target_pd = (uint32_t *)physical_cr3;
+
+    for (i = 0; i < RECURSIVE_INDEX; i++) {
+        uint32_t entry = target_pd[i];
+
+        if (!(entry & PAGE_PRESENT))
+            continue;
+
+        if (entry == page_directory[i])
+            continue;
+
+        pmm_free_page(
+            (void *)(entry & PAGE_FRAME_MASK)
+        );
+
+        target_pd[i] = 0;
+    }
+
+    pmm_free_page((void *)physical_cr3);
+
+    return 0;
+}
+
+
 int paging_switch_address_space(uint32_t cr3)
 {
     if (!cr3)

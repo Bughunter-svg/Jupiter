@@ -33,7 +33,7 @@ static int scheduler_tick_counter = 0;
 
 static void process_exit(void) {
     ProcessControlBlock *pcb = &pcbs[current_pid];
-    int next = 0;
+    int next = -1;
 
     print("\nProcess ");
     print(pcb->name);
@@ -48,7 +48,7 @@ static void process_exit(void) {
         }
     }
 
-    if (pcbs[next].state != PROCESS_READY) {
+    if (next < 0) {
         for (;;) {
             asm volatile("cli\nhlt");
         }
@@ -64,6 +64,64 @@ static void process_exit(void) {
     for (;;) {
         asm volatile("cli\nhlt");
     }
+}
+
+static int find_free_slot(void) {
+    for (int i = 1; i < process_count; i++) {
+        if (pcbs[i].state == PROCESS_UNUSED)
+            return i;
+    }
+
+    if (process_count < MAX_PROCESSES)
+        return process_count++;
+
+    return -1;
+}
+
+static int active_processes(void) {
+    int count = 0;
+
+    for (int i = 0; i < process_count; i++) {
+        if (pcbs[i].state != PROCESS_UNUSED)
+            count++;
+    }
+
+    return count;
+}
+
+static int reap_process(int pid) {
+    ProcessControlBlock *pcb;
+
+    if (pid <= 0 || pid >= process_count)
+        return -1;
+
+    pcb = &pcbs[pid];
+
+    if (pcb->state != PROCESS_ZOMBIE)
+        return -2;
+
+    if (pcb->parent_pid != current_pid)
+        return -3;
+
+    if (pcb->is_ring3) {
+        if (pcb->user_code_page)
+            pmm_free_page((void *)pcb->user_code_page);
+
+        if (pcb->user_stack_page)
+            pmm_free_page((void *)pcb->user_stack_page);
+
+        if (paging_destroy_address_space(pcb->cr3) != 0)
+            return -4;
+    }
+
+    if (pcb->kernel_stack)
+        kvfree((void *)pcb->kernel_stack);
+
+    memset(pcb, 0, sizeof(ProcessControlBlock));
+    pcb->state = PROCESS_UNUSED;
+    pcb->pid = pid;
+
+    return 0;
 }
 
 void process_trampoline(void) {
@@ -87,6 +145,9 @@ void init_scheduler(void) {
 
     memset(pcbs, 0, sizeof(pcbs));
 
+    for (int i = 0; i < MAX_PROCESSES; i++)
+        pcbs[i].state = PROCESS_UNUSED;
+
     pcbs[0].pid = 0;
     pcbs[0].state = PROCESS_RUNNING;
     pcbs[0].priority = 0;
@@ -109,19 +170,21 @@ void init_scheduler(void) {
 }
 
 int create_process(void (*entry)(void), const char *name, int priority) {
-    if (process_count >= MAX_PROCESSES) {
+    int pid = find_free_slot();
+
+    if (pid < 0) {
         print("Error: Max processes reached!\n");
         return -1;
     }
 
-    int pid = process_count++;
     ProcessControlBlock *pcb = &pcbs[pid];
 
     void *stack_mem = kvmalloc(STACK_SIZE);
 
     if (!stack_mem) {
         print("Error: No memory for process stack\n");
-        process_count--;
+        if (pid == process_count - 1 && pid > 0)
+            process_count--;
         return -1;
     }
     uint32_t stack_top = (uint32_t)stack_mem + STACK_SIZE;
@@ -151,6 +214,10 @@ int create_process(void (*entry)(void), const char *name, int priority) {
     pcb->cr3 = paging_get_current_cr3();
     pcb->is_ring3 = 0;
     pcb->user_esp = 0;
+    pcb->kernel_stack = (uint32_t)stack_mem;
+    pcb->user_code_page = 0;
+    pcb->user_stack_page = 0;
+    pcb->parent_pid = current_pid;
     pcb->pid = pid;
     pcb->state = PROCESS_READY;
     pcb->priority = priority;
@@ -184,11 +251,6 @@ int create_ring3_process(const char *name, int priority) {
     int pid;
     ProcessControlBlock *pcb;
     unsigned int i;
-
-    if (process_count >= MAX_PROCESSES) {
-        print("Error: Max processes reached!\n");
-        return -1;
-    }
 
     kernel_cr3 = paging_get_current_cr3();
 
@@ -275,7 +337,16 @@ int create_ring3_process(const char *name, int priority) {
 
     asm volatile("sti");
 
-    pid = process_count++;
+    pid = find_free_slot();
+
+    if (pid < 0) {
+        kvfree(stack_mem);
+        pmm_free_page(code_page);
+        pmm_free_page(stack_page);
+        paging_destroy_address_space(new_cr3);
+        return -1;
+    }
+
     pcb = &pcbs[pid];
 
     stack_top = (uint32_t)stack_mem + STACK_SIZE;
@@ -304,6 +375,10 @@ int create_ring3_process(const char *name, int priority) {
     pcb->cr3 = new_cr3;
     pcb->is_ring3 = 1;
     pcb->user_esp = user_stack_top;
+    pcb->kernel_stack = (uint32_t)stack_mem;
+    pcb->user_code_page = (uint32_t)code_page;
+    pcb->user_stack_page = (uint32_t)stack_page;
+    pcb->parent_pid = current_pid;
     pcb->pid = pid;
     pcb->state = PROCESS_READY;
     pcb->priority = priority;
@@ -367,6 +442,9 @@ void list_processes(void) {
     for (int i = 0; i < process_count; i++) {
         char buf[4];
 
+        if (pcbs[i].state == PROCESS_UNUSED)
+            continue;
+
         itoa(pcbs[i].pid, buf, 10);
 
         print(buf);
@@ -388,6 +466,10 @@ void list_processes(void) {
             case PROCESS_ZOMBIE:
                 print("ZOMBIE   ");
                 break;
+
+            case PROCESS_UNUSED:
+                print("UNUSED   ");
+                break;
         }
 
         itoa(pcbs[i].priority, buf, 10);
@@ -404,5 +486,30 @@ int get_current_pid(void) {
 }
 
 int get_process_count(void) {
-    return process_count;
+    return active_processes();
+}
+
+int wait_process(int pid) {
+    ProcessControlBlock *pcb;
+
+    if (pid <= 0 || pid >= process_count)
+        return -1;
+
+    pcb = &pcbs[pid];
+
+    if (pcb->parent_pid != current_pid)
+        return -3;
+
+    if (pcb->state == PROCESS_UNUSED)
+        return -1;
+
+    for (;;) {
+        if (pcb->state == PROCESS_ZOMBIE)
+            return reap_process(pid);
+
+        if (pcb->state == PROCESS_UNUSED)
+            return -1;
+
+        yield();
+    }
 }
