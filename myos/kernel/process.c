@@ -12,9 +12,33 @@ int process_count = 1;
 extern void switch_task_asm(ProcessControlBlock *current, ProcessControlBlock *next);
 extern void process_trampoline(void);
 
-
+extern void tss_set_kernel_stack(uint32_t stack_top);
 extern void enter_ring3(uint32_t user_esp);
 extern void *pmm_alloc_page(void);
+
+void set_current_irq_esp(uint32_t esp)
+{
+    pcbs[current_pid].irq_esp = esp;
+
+    print("DEBUG set_current_irq_esp current_pid=");
+    print_int(current_pid);
+    print(" esp=");
+    print_hex(esp);
+    print("\n");
+}
+
+uint32_t get_current_irq_esp(void)
+{
+    uint32_t v = pcbs[current_pid].irq_esp;
+
+    print("DEBUG get_current_irq_esp current_pid=");
+    print_int(current_pid);
+    print(" irq_esp=");
+    print_hex(v);
+    print("\n");
+
+    return v;
+}
 
 #define RING3_CODE_VADDR   0x00400000U
 #define RING3_STACK_VADDR  0x00401000U
@@ -31,7 +55,7 @@ static const unsigned char ring3_demo_code[] = {
 #define SCHEDULER_TICK_INTERVAL 10   
 static int scheduler_tick_counter = 0;
 
-static void process_exit(void) {
+void process_exit(void) {
     ProcessControlBlock *pcb = &pcbs[current_pid];
     int next = -1;
 
@@ -58,6 +82,9 @@ static void process_exit(void) {
 
     nxt->state = PROCESS_RUNNING;
     current_pid = next;
+
+    if (nxt->is_ring3)
+        tss_set_kernel_stack(nxt->kernel_stack + STACK_SIZE);
 
     switch_task_asm(pcb, nxt);
 
@@ -128,8 +155,9 @@ void process_trampoline(void) {
     ProcessControlBlock *pcb = &pcbs[current_pid];
 
     if (pcb->is_ring3) {
-        
+        tss_set_kernel_stack(pcb->kernel_stack + STACK_SIZE);
         enter_ring3(pcb->user_esp);
+        asm volatile("sti");
     } else {
         void (*entry)(void) = (void (*)(void))pcb->eip;
         entry();
@@ -169,7 +197,31 @@ void init_scheduler(void) {
     print("\n");
 }
 
+int process_name_exists(const char *name)
+{
+    for (int i = 0; i < process_count; i++) {
+        if (pcbs[i].state != PROCESS_UNUSED &&
+            strcmp(pcbs[i].name, name) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 int create_process(void (*entry)(void), const char *name, int priority) {
+    if (!name || name[0] == '\0') {
+        print("Error: process name cannot be empty.\n");
+        return -1;
+    }
+
+    if (process_name_exists(name)) {
+        print("Error: process '");
+        print(name);
+        print("' already exists.\n");
+        return -1;
+    }
+
     int pid = find_free_slot();
 
     if (pid < 0) {
@@ -241,6 +293,18 @@ int create_process(void (*entry)(void), const char *name, int priority) {
 }
 
 int create_ring3_process(const char *name, int priority) {
+    if (!name || name[0] == '\0') {
+        print("Error: process name cannot be empty.\n");
+        return -1;
+    }
+
+    if (process_name_exists(name)) {
+        print("Error: process '");
+        print(name);
+        print("' already exists.\n");
+        return -1;
+    }
+
     void *code_page;
     void *stack_page;
     uint32_t kernel_cr3;
@@ -423,16 +487,55 @@ void yield(void) {
     cur->state = PROCESS_RUNNING;
 }
 
-void scheduler_tick(void) {
+uint32_t scheduler_tick(uint32_t irq_esp) {
+    ProcessControlBlock *cur;
+    ProcessControlBlock *nxt;
+    int next;
+
+    cur = &pcbs[current_pid];
+
+    cur->irq_esp = irq_esp;
+    cur->esp = 0;
+
     scheduler_tick_counter++;
 
     if (scheduler_tick_counter < SCHEDULER_TICK_INTERVAL)
-        return;
+        return irq_esp;
 
     scheduler_tick_counter = 0;
 
-    
-    yield();
+    next = (current_pid + 1) % process_count;
+
+    while (pcbs[next].state != PROCESS_READY) {
+        next = (next + 1) % process_count;
+
+        if (next == current_pid)
+            return irq_esp;
+    }
+
+    nxt = &pcbs[next];
+
+    if (!nxt->irq_esp)
+        return irq_esp;
+
+    cur->state = PROCESS_READY;
+    nxt->state = PROCESS_RUNNING;
+
+    current_pid = next;
+
+    if (nxt->is_ring3)
+        tss_set_kernel_stack(nxt->kernel_stack + STACK_SIZE);
+
+    if (nxt->cr3 != cur->cr3) {
+        asm volatile(
+            "mov %0, %%cr3"
+            :
+            : "r"(nxt->cr3)
+            : "memory"
+        );
+    }
+
+    return nxt->irq_esp;
 }
 
 void list_processes(void) {

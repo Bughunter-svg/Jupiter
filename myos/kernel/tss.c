@@ -79,6 +79,11 @@ void tss_prepare(void)
     );
 }
 
+void tss_set_kernel_stack(uint32_t stack_top)
+{
+    tss.esp0 = stack_top;
+}
+
 void init_tss(void)
 {
     asm volatile(

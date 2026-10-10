@@ -913,19 +913,10 @@ void execute_command(char *input)
 
     }
 
-    else if (strcmp(args[0], "run") == 0 &&
-             argc > 1) {
-
-        int pid =
-            create_process(
-                test_process,
-                args[1],
-                1
-            );
-
+    else if (strcmp(args[0], "run") == 0 && argc > 1) {
+        int pid = create_process(test_process, args[1], 1);
         if (pid >= 0)
-            print("Process created successfully.\\n");
-
+            print("Process created successfully.\n");
     }
 
     else if (strcmp(args[0], "ring3proc") == 0 &&

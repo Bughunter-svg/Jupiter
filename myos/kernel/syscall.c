@@ -8,14 +8,11 @@ void syscall_init(void)
 {
 }
 
-int syscall_handler(void)
+int syscall_handler(uint32_t value)
 {
-    unsigned int value;
-
-    asm volatile(
-        "mov %%eax, %0"
-        : "=r"(value)
-    );
+    print("DEBUG syscall value = ");
+    print_hex(value);
+    print("\n");
 
     if (value == SYS_TEST) {
         print("Ring 3 syscall reached Ring 0!\n");

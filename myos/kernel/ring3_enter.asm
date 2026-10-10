@@ -2,7 +2,7 @@ bits 32
 
 global enter_ring3
 
-extern ring3_kernel_esp
+extern set_current_irq_esp
 
 enter_ring3:
     push ebp
@@ -10,7 +10,9 @@ enter_ring3:
     push esi
     push ebx
 
-    mov [ring3_kernel_esp], esp
+    push esp
+    call set_current_irq_esp
+    add esp, 4
 
     cli
 

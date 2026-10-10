@@ -8,6 +8,7 @@ global isr_general_protection
 extern page_fault_handler
 extern general_protection_handler
 extern scheduler_tick
+extern timer_handler
 
 isr_page_fault:
     cli
@@ -39,25 +40,25 @@ isr_general_protection:
 
 isr_timer:
     pusha
+
     mov al, 0x20
     out 0x20, al
 
-    ; NEW: give the scheduler a chance to preempt on this tick.
-    ; scheduler_tick() throttles itself internally and only calls
-    ; yield() (switch_task_asm) every SCHEDULER_TICK_INTERVAL ticks.
-    ; When it does switch away, execution of THIS task resumes right
-    ; here (popa below) once it's scheduled back in, because every
-    ; task that can be preempted this way was itself last suspended at
-    ; exactly this same point in isr_timer - so the pusha/popa frames
-    ; always line up.
-    call scheduler_tick
+    call timer_handler
 
+    push esp
+    call scheduler_tick
+    add esp, 4
+
+    mov esp, eax
     popa
     iret
 
 isr_keyboard:
     pusha
+
     mov al, 0x20
     out 0x20, al
+
     popa
     iret

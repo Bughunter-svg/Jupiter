@@ -3,7 +3,6 @@
 #include "screen.h"
 #include <stdint.h>
 
-uint32_t ring3_kernel_esp;
 
 void ring3_test(void)
 {

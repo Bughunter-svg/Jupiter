@@ -1,3 +1,6 @@
+
+    
+  
 #ifndef PROCESS_H
 #define PROCESS_H
 
@@ -28,6 +31,7 @@ typedef struct {
     uint32_t     user_code_page;
     uint32_t     user_stack_page;
     int          parent_pid;
+    uint32_t     irq_esp;
 } ProcessControlBlock;
 
 void init_scheduler(void);
@@ -39,6 +43,9 @@ void list_processes(void);
 int  get_current_pid(void);
 int  get_process_count(void);
 int  wait_process(int pid);
-void scheduler_tick(void);
+uint32_t scheduler_tick(uint32_t irq_esp);
+void set_current_irq_esp(uint32_t esp);
+uint32_t get_current_irq_esp(void);
+int process_name_exists(const char *name);
 
 #endif

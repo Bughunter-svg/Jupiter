@@ -3,14 +3,17 @@ bits 32
 global isr_syscall
 
 extern syscall_handler
-extern ring3_kernel_esp
+extern process_exit
 
 isr_syscall:
     cli
     cld
     pusha
 
+    mov eax, [esp + 28]
+    push eax
     call syscall_handler
+    add esp, 4
 
     cmp eax, 1
     je .exit
@@ -20,13 +23,9 @@ isr_syscall:
     iret
 
 .exit:
-    add esp, 32
-    mov esp, [ring3_kernel_esp]
+    call process_exit
 
-    pop ebx
-    pop esi
-    pop edi
-    pop ebp
-
-    sti
-    ret
+.halt:
+    cli
+    hlt
+    jmp .halt
