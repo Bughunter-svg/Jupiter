@@ -30,13 +30,21 @@ static int ctrl_pressed = 0;
 char keyboard_buffer[256] = {0};
 int keyboard_buffer_size = 0;
 
+static uint8_t read_keyboard_byte(void) {
+    uint8_t status;
+
+    for (;;) {
+        status = inb(STATUS_PORT);
+
+        if ((status & 0x01) && !(status & 0x20))
+            return inb(DATA_PORT);
+    }
+}
+
 int get_key(void) {
     uint8_t scancode;
 
-    while (!(inb(STATUS_PORT) & 0x01))
-        ;
-
-    scancode = inb(DATA_PORT);
+    scancode = read_keyboard_byte();
 
     if (scancode == 0x1D) {
         ctrl_pressed = 1;
@@ -59,10 +67,7 @@ int get_key(void) {
     }
 
     if (scancode == 0xE0) {
-        while (!(inb(STATUS_PORT) & 0x01))
-            ;
-
-        uint8_t ext_scancode = inb(DATA_PORT);
+        uint8_t ext_scancode = read_keyboard_byte();
 
         if (ext_scancode == 0x48)
             return KEY_UP;

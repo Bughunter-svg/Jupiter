@@ -2,6 +2,7 @@ bits 32
 
 global isr_timer
 global isr_keyboard
+global isr_mouse
 global isr_page_fault
 global isr_general_protection
 
@@ -9,6 +10,7 @@ extern page_fault_handler
 extern general_protection_handler
 extern scheduler_tick
 extern timer_handler
+extern mouse_handler
 
 isr_page_fault:
     cli
@@ -58,6 +60,19 @@ isr_keyboard:
     pusha
 
     mov al, 0x20
+    out 0x20, al
+
+    popa
+    iret
+
+isr_mouse:
+    pusha
+    cld
+
+    call mouse_handler
+
+    mov al, 0x20
+    out 0xA0, al
     out 0x20, al
 
     popa

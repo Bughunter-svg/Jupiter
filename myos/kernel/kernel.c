@@ -19,6 +19,9 @@
 #include <stddef.h>
 #include "memory.h"
 #include "netcmds.h"
+#include "speaker.h"
+#include "rtc.h"
+#include "mouse.h"
 
 #define LINE_SIZE 128
 
@@ -821,7 +824,9 @@ void execute_command(char *input)
         print("| [MEMORY]  rotest                                      	|\n");
         print("| [MEMORY]  ring3test                                  	|\n");
         print("| [SYSTEM]  run, ring3proc, wait, time, timer, sleep     |\n");
-        print("| [SYSTEM]  memmap, uptime                              |\n");
+        print("| [SYSTEM]  memmap, uptime                               |\n");
+        print("| [SYSTEM]  date, beep, melody                           |\n");
+        print("| [SYSTEM]  mouse, mouse paint on/off, mouse hide/show   |\n");
         print("| [SYSTEM]  uptime                                       |\n");
         print("| [INFO]    cpuinfo, osinfo, status, df                  |\n");
         print("| [NETWORK] ping, ifconfig, arp                          |\n");
@@ -962,6 +967,91 @@ void execute_command(char *input)
             print("Process is not a child of the current process.\n");
         else
             print("Process reaping failed.\n");
+
+    }
+    
+        else if (strcmp(args[0], "beep") == 0) {
+
+        unsigned int frequency = 1000;
+        unsigned int duration = 200;
+
+        if (argc > 1)
+            frequency = (unsigned int)atoi_simple(args[1]);
+
+        if (argc > 2)
+            duration = (unsigned int)atoi_simple(args[2]);
+
+        if (frequency < 20 || frequency > 20000)
+            print("Usage: beep [20-20000 Hz] [duration ms]\n");
+        else
+            speaker_beep(frequency, duration);
+
+    }
+
+    else if (strcmp(args[0], "melody") == 0) {
+
+        speaker_melody();
+
+    }
+
+    else if (strcmp(args[0], "date") == 0) {
+
+        rtc_time_t now;
+        char text[20];
+
+        rtc_read(&now);
+        rtc_format(text, &now);
+
+        print(text);
+        print("\n");
+
+    }
+
+    else if (strcmp(args[0], "mouse") == 0) {
+
+        if (argc > 1 && strcmp(args[1], "paint") == 0) {
+
+            if (argc > 2 && strcmp(args[2], "off") == 0)
+                mouse_set_paint(0);
+            else
+                mouse_set_paint(1);
+
+        } else if (argc > 1 && strcmp(args[1], "hide") == 0) {
+
+            mouse_set_cursor_visible(0);
+
+        } else if (argc > 1 && strcmp(args[1], "show") == 0) {
+
+            mouse_set_cursor_visible(1);
+
+        } else if (!mouse_is_ready()) {
+
+            print("Mouse not available\n");
+
+        } else {
+
+            int buttons = mouse_get_buttons();
+
+            print("Mouse: x=");
+            print_int(mouse_get_x());
+            print(" y=");
+            print_int(mouse_get_y());
+            print(" buttons=");
+
+            if (buttons & MOUSE_LEFT)
+                print("L");
+
+            if (buttons & MOUSE_RIGHT)
+                print("R");
+
+            if (buttons & MOUSE_MIDDLE)
+                print("M");
+
+            if (!buttons)
+                print("none");
+
+            print("\n");
+        }
 
     }
 
@@ -1496,6 +1586,11 @@ void kmain(unsigned int magic,
     init_gdt();
     init_tss();
     init_interrupts();
+
+    if (mouse_init())
+        print("PS/2 mouse initialized\n");
+    else
+        print("PS/2 mouse not found\n");
 
     init_timer();
 

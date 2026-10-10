@@ -9,7 +9,7 @@ OBJS = boot/boot.o kernel/kernel.o kernel/screen.o kernel/ports.o kernel/keyboar
        kernel/interrupts.o kernel/isr.o kernel/splash.o kernel/system.o kernel/memory.o \
        kernel/switch.o kernel/editor.o kernel/network.o kernel/netcmds.o kernel/login.o \
        kernel/paging.o kernel/vm.o kernel/gdt.o kernel/tss.o \
-       kernel/syscall.o kernel/ring3.o kernel/user.o kernel/syscall_isr.o kernel/ring3_enter.o
+       kernel/syscall.o kernel/ring3.o kernel/user.o kernel/syscall_isr.o kernel/ring3_enter.o kernel/speaker.o kernel/rtc.o kernel/mouse.o 
 
 all: kernel.bin
 

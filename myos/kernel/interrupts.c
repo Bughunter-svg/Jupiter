@@ -23,6 +23,7 @@ static struct idt_ptr idtp;
 extern void isr_syscall(void);
 extern void isr_timer(void);
 extern void isr_keyboard(void);
+extern void isr_mouse(void);
 extern void isr_page_fault(void);
 extern void isr_general_protection(void);
 
@@ -76,6 +77,13 @@ static void init_idt(void)
     );
 
     idt_set_gate(
+        0x2C,
+        (unsigned long)isr_mouse,
+        KERNEL_CODE_SELECTOR,
+        0x8E
+    );
+
+    idt_set_gate(
         0x80,
         (unsigned long)isr_syscall,
         KERNEL_CODE_SELECTOR,
@@ -108,10 +116,10 @@ void init_interrupts(void)
     outb(0x21, 0x01);
     outb(0xA1, 0x01);
 
-    outb(0x21, 0xFE);
-    outb(0xA1, 0xFF);
+    outb(0x21, 0xFA);
+    outb(0xA1, 0xEF);
 
-    print("PIC remapped - ONLY timer enabled\n");
+    print("PIC remapped - timer, cascade and mouse enabled\n");
 }
 
 void enable_interrupts(void)
