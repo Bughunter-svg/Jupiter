@@ -13,6 +13,7 @@ extern char keyboard_buffer[256];
 extern int keyboard_buffer_size;
 
 int get_key(void);
+int keyboard_poll(void);
 void get_line(char *buffer, int size);
 void get_init(void);
 int key_available(void);

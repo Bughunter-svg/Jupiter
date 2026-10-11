@@ -823,7 +823,10 @@ void execute_command(char *input)
         print("| [MEMORY]  rotest, guardtest                           	|\n");
         print("| [MEMORY]  rotest                                      	|\n");
         print("| [MEMORY]  ring3test                                  	|\n");
-        print("| [SYSTEM]  run, ring3proc, wait, time, timer, sleep     |\n");
+        print("| [SYSTEM]  run, exec, ring3proc, wait, time, timer, sleep |\n");
+        print("| [SYSTEM]  crash <name> [null|kernel|priv]              |\n");
+        print("| [SYSTEM]  ticker <name>                                |\n");
+        print("| [SYSTEM]  tickers [prefix]                             |\n");
         print("| [SYSTEM]  memmap, uptime                               |\n");
         print("| [SYSTEM]  date, beep, melody                           |\n");
         print("| [SYSTEM]  mouse, mouse paint on/off, mouse hide/show   |\n");
@@ -924,6 +927,18 @@ void execute_command(char *input)
             print("Process created successfully.\n");
     }
 
+    else if (strcmp(args[0], "exec") == 0 &&
+             argc > 1) {
+
+        int pid = create_ring3_from_file(args[1]);
+
+        if (pid >= 0) {
+            yield();
+            wait_process(pid);
+        }
+
+    }
+
     else if (strcmp(args[0], "ring3proc") == 0 &&
              argc > 1) {
 
@@ -936,6 +951,54 @@ void execute_command(char *input)
         if (pid >= 0) {
             print("Ring3 process created successfully.\n");
             yield();
+        }
+
+    }
+
+    else if (strcmp(args[0], "crash") == 0 &&
+             argc > 1) {
+
+        int kind = 0;
+
+        if (argc > 2 && strcmp(args[2], "kernel") == 0)
+            kind = 1;
+        else if (argc > 2 && strcmp(args[2], "priv") == 0)
+            kind = 2;
+
+        int pid = create_ring3_crash(args[1], kind);
+
+        if (pid >= 0) {
+            print("Crash test process created.\n");
+            yield();
+        }
+
+    }
+
+    else if (strcmp(args[0], "ticker") == 0 &&
+             argc > 1) {
+
+        int pid = create_ring3_ticker(args[1]);
+
+        if (pid >= 0)
+            print("Ticker process created.\n");
+
+    }
+
+    else if (strcmp(args[0], "tickers") == 0) {
+
+        const char *prefix = argc > 1 ? args[1] : "t";
+        char name[32];
+        int len = 0;
+
+        while (prefix[len] && len < 24) {
+            name[len] = prefix[len];
+            len++;
+        }
+
+        for (int n = 1; n <= 3; n++) {
+            name[len] = (char)('0' + n);
+            name[len + 1] = '\0';
+            create_ring3_ticker(name);
         }
 
     }
@@ -1580,6 +1643,7 @@ void kmain(unsigned int magic,
     vm_init();
 
     fs_init();
+    process_seed_program_files();
 
     init_scheduler();
 
@@ -1631,6 +1695,8 @@ void kmain(unsigned int magic,
             line,
             LINE_SIZE
         );
+
+        reap_zombies();
 
         if (line[0] == 0)
             continue;

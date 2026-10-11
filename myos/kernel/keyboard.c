@@ -105,6 +105,60 @@ int get_key(void) {
     return 0;
 }
 
+int keyboard_poll(void) {
+    uint8_t status;
+    uint8_t scancode;
+    char key;
+
+    status = inb(STATUS_PORT);
+
+    if (!(status & 0x01) || (status & 0x20))
+        return 0;
+
+    scancode = inb(DATA_PORT);
+
+    if (scancode == 0x1D) {
+        ctrl_pressed = 1;
+        return 0;
+    }
+
+    if (scancode == 0x9D) {
+        ctrl_pressed = 0;
+        return 0;
+    }
+
+    if (scancode == 0x2A || scancode == 0x36) {
+        shift_pressed = 1;
+        return 0;
+    }
+
+    if (scancode == 0xAA || scancode == 0xB6) {
+        shift_pressed = 0;
+        return 0;
+    }
+
+    if (scancode & 0x80)
+        return 0;
+
+    if (scancode == 0xE0)
+        return 0;
+
+    if (ctrl_pressed)
+        return 0;
+
+    if (scancode >= sizeof(scancode_map))
+        return 0;
+
+    key = shift_pressed
+        ? shifted_scancode_map[scancode]
+        : scancode_map[scancode];
+
+    if (!key)
+        return 0;
+
+    return (int)key;
+}
+
 void get_line(char *buffer, int size) {
     int i = 0;
     int c;

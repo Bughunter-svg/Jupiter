@@ -10,6 +10,7 @@ typedef struct {
     int size;
     int capacity;
     int used;
+    int is_binary;
 } file_t;
 
 static file_t files[MAX_FILES];
@@ -97,6 +98,7 @@ int fs_create(const char *filename, const char *content) {
             files[i].size = content_len;
             files[i].capacity = capacity;
             files[i].used = 1;
+            files[i].is_binary = 0;
 
             print("File created: ");
             print(filename);
@@ -110,6 +112,93 @@ int fs_create(const char *filename, const char *content) {
     return 0;
 }
 
+static int fs_find_slot(const char *filename, int for_create)
+{
+    int free_slot = -1;
+
+    for (int i = 0; i < MAX_FILES; i++) {
+        if (files[i].used && strcmp(files[i].name, filename) == 0)
+            return for_create ? -2 : i;
+
+        if (!files[i].used && free_slot < 0)
+            free_slot = i;
+    }
+
+    if (for_create)
+        return free_slot;
+
+    return -1;
+}
+
+int fs_create_binary(const char *filename, const void *data, int size)
+{
+    int slot;
+    int capacity;
+    char *buf;
+    int name_len;
+
+    if (!filename || !filename[0] || !data || size <= 0)
+        return 0;
+
+    if (size > MAX_BINARY_FILE_SIZE)
+        return 0;
+
+    slot = fs_find_slot(filename, 1);
+
+    if (slot == -2) {
+        print("Error: File already exists\n");
+        return 0;
+    }
+
+    if (slot < 0) {
+        print("Error: Maximum file limit reached\n");
+        return 0;
+    }
+
+    capacity = file_capacity(size);
+    buf = (char *)kmalloc(capacity);
+
+    if (!buf) {
+        print("Error: Not enough memory\n");
+        return 0;
+    }
+
+    name_len = strlen(filename);
+
+    if (name_len >= MAX_FILENAME)
+        name_len = MAX_FILENAME - 1;
+
+    memcpy(files[slot].name, filename, name_len);
+    files[slot].name[name_len] = '\0';
+    memcpy(buf, data, size);
+
+    files[slot].data = buf;
+    files[slot].size = size;
+    files[slot].capacity = capacity;
+    files[slot].used = 1;
+    files[slot].is_binary = 1;
+
+    return 1;
+}
+
+int fs_read_binary(const char *filename, const unsigned char **data, unsigned int *size)
+{
+    int slot;
+
+    if (!filename || !filename[0] || !data || !size)
+        return -1;
+
+    slot = fs_find_slot(filename, 0);
+
+    if (slot < 0)
+        return -1;
+
+    *data = (const unsigned char *)files[slot].data;
+    *size = (unsigned int)files[slot].size;
+
+    return 0;
+}
+
 int fs_write(const char *filename, const char *content) {
     if (!filename || !content)
         return 0;
@@ -117,6 +206,11 @@ int fs_write(const char *filename, const char *content) {
     for (int i = 0; i < MAX_FILES; i++) {
         if (files[i].used &&
             strcmp(files[i].name, filename) == 0) {
+
+            if (files[i].is_binary) {
+                print("Error: binary file is read-only\n");
+                return 0;
+            }
 
             int new_size = strlen(content);
 
@@ -232,6 +326,11 @@ void fs_append(const char *filename, const char *content) {
         if (files[i].used &&
             strcmp(files[i].name, filename) == 0) {
 
+            if (files[i].is_binary) {
+                print("Error: binary file is read-only\n");
+                return;
+            }
+
             int old_size = files[i].size;
             int append_size = strlen(content);
             int new_size = old_size + append_size;
@@ -311,9 +410,13 @@ void fs_info(const char *filename) {
             print(buf);
             print(" bytes\n");
 
-            print("Data : \"");
-            print(files[i].data);
-            print("\"\n");
+            if (files[i].is_binary) {
+                print("Type : binary\n");
+            } else {
+                print("Data : \"");
+                print(files[i].data);
+                print("\"\n");
+            }
 
             return;
         }
@@ -323,14 +426,25 @@ void fs_info(const char *filename) {
 }
 
 void fs_copy(const char *source, const char *dest) {
-    const char *content = fs_read(source);
+    int slot = fs_find_slot(source, 0);
 
-    if (strcmp(content, "Error: File not found") == 0) {
+    if (slot < 0) {
         print("Error: Source not found\n");
         return;
     }
 
-    if (fs_create(dest, content)) {
+    if (files[slot].is_binary) {
+        if (fs_create_binary(dest, files[slot].data, files[slot].size)) {
+            print("Copied ");
+            print(source);
+            print(" -> ");
+            print(dest);
+            print("\n");
+        }
+        return;
+    }
+
+    if (fs_create(dest, files[slot].data)) {
         print("Copied ");
         print(source);
         print(" -> ");
