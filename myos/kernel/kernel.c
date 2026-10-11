@@ -22,6 +22,8 @@
 #include "speaker.h"
 #include "rtc.h"
 #include "mouse.h"
+#include "man.h"
+#include "man.h"
 
 #define LINE_SIZE 128
 
@@ -814,29 +816,13 @@ void execute_command(char *input)
 
     if (strcmp(args[0], "help") == 0) {
 
-        print("=============== JUPITER OS HELP =========================\n");
-        print("| [FILE]    create, read, delete, ls                     |\n");
-        print("| [FILE]    append, info, cp, edit                       |\n");
-        print("| [SYSTEM]  clear, echo, meminfo, ps, calc               |\n");
-        print("| [MEMORY]  memtest, pmtest, pmm, paging, pf, vmtest     |\n");
-        print("| [MEMORY]  vmtest2, kheaptest, kheapstress, nulltest   	|\n");
-        print("| [MEMORY]  rotest, guardtest                           	|\n");
-        print("| [MEMORY]  rotest                                      	|\n");
-        print("| [MEMORY]  ring3test                                  	|\n");
-        print("| [SYSTEM]  run, exec, ring3proc, wait, time, timer, sleep |\n");
-        print("| [SYSTEM]  crash <name> [null|kernel|priv]              |\n");
-        print("| [SYSTEM]  ticker <name>                                |\n");
-        print("| [SYSTEM]  tickers [prefix]                             |\n");
-        print("| [SYSTEM]  memmap, uptime                               |\n");
-        print("| [SYSTEM]  date, beep, melody                           |\n");
-        print("| [SYSTEM]  mouse, mouse paint on/off, mouse hide/show   |\n");
-        print("| [SYSTEM]  uptime                                       |\n");
-        print("| [INFO]    cpuinfo, osinfo, status, df                  |\n");
-        print("| [NETWORK] ping, ifconfig, arp                          |\n");
-        print("| [NETWORK] net, net test, net send                      |\n");
-        print("| [USER]    whoami, logout                               |\n");
-        print("| [HELP]    help                                         |\n");
-        print("==========================================================\n");
+        shell_print_help();
+
+    }
+
+    else if (strcmp(args[0], "man") == 0) {
+
+        man_command(argc, args);
 
     }
 
