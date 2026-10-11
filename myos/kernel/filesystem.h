@@ -6,9 +6,12 @@
 #define MAX_FILES 20
 #define MAX_FILENAME 32
 #define MAX_FILE_SIZE 512
+#define MAX_BINARY_FILE_SIZE 65536
 
 void fs_init(void);
 int fs_create(const char *filename, const char *content);
+int fs_create_binary(const char *filename, const void *data, int size);
+int fs_read_binary(const char *filename, const unsigned char **data, unsigned int *size);
 const char *fs_read(const char *filename);
 int fs_delete(const char *filename);
 void fs_list(void);
