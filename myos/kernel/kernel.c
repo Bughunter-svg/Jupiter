@@ -907,6 +907,21 @@ void execute_command(char *input)
 
     }
 
+    else if (strcmp(args[0], "procinfo") == 0 &&
+             argc > 1) {
+
+        int pid = 0;
+        char *p = args[1];
+
+        while (*p >= '0' && *p <= '9') {
+            pid = pid * 10 + (*p - '0');
+            p++;
+        }
+
+        show_process_info(pid);
+
+    }
+
     else if (strcmp(args[0], "run") == 0 && argc > 1) {
         int pid = create_process(test_process, args[1], 1);
         if (pid >= 0)
@@ -916,12 +931,74 @@ void execute_command(char *input)
     else if (strcmp(args[0], "exec") == 0 &&
              argc > 1) {
 
-        int pid = create_ring3_from_file(args[1]);
+        int background = 0;
+        int pid;
+
+        if (argc > 2 && strcmp(args[argc - 1], "&") == 0) {
+            background = 1;
+            args[argc - 1] = '\0';
+            argc--;
+        }
+
+        if (argc < 2)
+            return;
+
+        if (background && strcmp(args[1], "echo") == 0) {
+            print("Error: echo cannot run in background (shared keyboard).\n");
+            return;
+        }
+
+        pid = create_ring3_from_file(args[1]);
 
         if (pid >= 0) {
-            yield();
-            wait_process(pid);
+            if (background) {
+                process_set_background(pid, 1);
+                yield();
+                print("[");
+                print_int(pid);
+                print("] ");
+                print(args[1]);
+                print("\n");
+            } else {
+                yield();
+                wait_process(pid);
+            }
         }
+
+    }
+
+    else if (strcmp(args[0], "jobs") == 0) {
+
+        list_shell_jobs();
+
+    }
+
+    else if (strcmp(args[0], "fg") == 0 &&
+             argc > 1) {
+
+        int pid = 0;
+        char *p = args[1];
+        int result;
+
+        while (*p >= '0' && *p <= '9') {
+            pid = pid * 10 + (*p - '0');
+            p++;
+        }
+
+        result = wait_process(pid);
+
+        if (result == 0)
+            print("Job reaped.\n");
+        else if (result == -3)
+            print("Error: not a shell job.\n");
+        else
+            print("Error: invalid job PID.\n");
+
+    }
+
+    else if (strcmp(args[0], "bg") == 0) {
+
+        print("Error: bg is not supported (no process suspension).\n");
 
     }
 

@@ -33,6 +33,7 @@ typedef struct {
     uint32_t     ring3_esp;
     int          user_code_num_pages;
     uint32_t     user_code_phys[16];
+    int          job_background;
 } ProcessControlBlock;
 
 void init_scheduler(void);
@@ -47,6 +48,9 @@ void user_fault(uint32_t vector, uint32_t error_code, uint32_t eip);
 void switch_task(void);
 void yield(void);
 void list_processes(void);
+void show_process_info(int pid);
+void process_set_background(int pid, int background);
+void list_shell_jobs(void);
 int  get_current_pid(void);
 int  get_process_count(void);
 int  wait_process(int pid);

@@ -60,14 +60,15 @@ void process_exit(void) {
     ProcessControlBlock *pcb = &pcbs[current_pid];
     int next = -1;
 
-    print("\nProcess ");
-    print(pcb->name);
-    print(" exited.\n");
-
-    pcb->state = PROCESS_ZOMBIE;
+    if (pcb->state != PROCESS_ZOMBIE) {
+        print("\nProcess ");
+        print(pcb->name);
+        print(" exited.\n");
+        pcb->state = PROCESS_ZOMBIE;
+    }
 
     for (int i = 0; i < process_count; i++) {
-        if (pcbs[i].state == PROCESS_READY) {
+        if (pcbs[i].state == PROCESS_READY && i != current_pid) {
             next = i;
             break;
         }
@@ -116,7 +117,7 @@ static uint32_t build_initial_frame(void *stack_mem) {
 
     frame[8] = (uint32_t)process_trampoline;
     frame[9] = 0x10;
-    frame[10] = 0x202;
+    frame[10] = 0x002;
 
     return (uint32_t)frame;
 }
@@ -149,6 +150,9 @@ static int reap_process(int pid) {
     if (pcb->is_ring3) {
         int p;
 
+        if (paging_destroy_address_space(pcb->cr3) != 0)
+            return -4;
+
         for (p = 0; p < pcb->user_code_num_pages; p++) {
             if (pcb->user_code_phys[p])
                 pmm_free_page((void *)pcb->user_code_phys[p]);
@@ -156,9 +160,6 @@ static int reap_process(int pid) {
 
         if (pcb->user_stack_page)
             pmm_free_page((void *)pcb->user_stack_page);
-
-        if (paging_destroy_address_space(pcb->cr3) != 0)
-            return -4;
     }
 
     if (pcb->kernel_stack)
@@ -285,6 +286,7 @@ int create_process(void (*entry)(void), const char *name, int priority) {
     pcb->user_code_page = 0;
     pcb->user_stack_page = 0;
     pcb->user_code_num_pages = 0;
+    pcb->job_background = 0;
     pcb->parent_pid = current_pid;
     pcb->pid = pid;
     pcb->state = PROCESS_READY;
@@ -524,6 +526,7 @@ int create_ring3_program(const char *name, int priority, const unsigned char *co
     pcb->pid = pid;
     pcb->state = PROCESS_READY;
     pcb->priority = priority;
+    pcb->job_background = 0;
 
     i = 0;
     while (name[i] && i < 31) {
@@ -585,6 +588,11 @@ int create_ring3_from_file(const char *filename)
         return -1;
     }
 
+    if (size < 4 || data[0] == 0x00) {
+        print("Error: file does not look like a flat binary program\n");
+        return -1;
+    }
+
     return create_ring3_program(filename, 1, data, size);
 }
 
@@ -643,12 +651,18 @@ int create_ring3_ticker(const char *name) {
     return create_ring3_program(name, 1, ring3_ticker_code, sizeof(ring3_ticker_code));
 }
 
+static void seed_one_binary(const char *name, const void *data, int size)
+{
+    fs_delete(name);
+    fs_create_binary(name, data, size);
+}
+
 void process_seed_program_files(void)
 {
-    fs_create_binary("hello", ring3_demo_code, (int)sizeof(ring3_demo_code));
-    fs_create_binary("ticker", ring3_ticker_code, (int)sizeof(ring3_ticker_code));
-    fs_create_binary("echo", ring3_echo_code, (int)sizeof(ring3_echo_code));
-    fs_create_binary("big", ring3_big_code, (int)sizeof(ring3_big_code));
+    seed_one_binary("hello", ring3_demo_code, (int)sizeof(ring3_demo_code));
+    seed_one_binary("ticker", ring3_ticker_code, (int)sizeof(ring3_ticker_code));
+    seed_one_binary("echo", ring3_echo_code, (int)sizeof(ring3_echo_code));
+    seed_one_binary("big", ring3_big_code, (int)sizeof(ring3_big_code));
 }
 
 int create_ring3_crash(const char *name, int kind) {
@@ -687,6 +701,8 @@ void user_fault(uint32_t vector, uint32_t error_code, uint32_t eip) {
             print(" (protected)");
         else
             print(" (not mapped)");
+    } else if (vector == 6) {
+        print("invalid opcode");
     } else {
         print("general protection fault (code ");
         print_hex(error_code);
@@ -696,6 +712,24 @@ void user_fault(uint32_t vector, uint32_t error_code, uint32_t eip) {
     print(" at EIP ");
     print_hex(eip);
     print("\n");
+
+    pcb->state = PROCESS_ZOMBIE;
+}
+
+static const char *process_state_name(ProcessState state)
+{
+    switch (state) {
+    case PROCESS_READY:
+        return "READY";
+    case PROCESS_RUNNING:
+        return "RUNNING";
+    case PROCESS_BLOCKED:
+        return "BLOCKED";
+    case PROCESS_ZOMBIE:
+        return "ZOMBIE";
+    default:
+        return "UNUSED";
+    }
 }
 
 void yield(void) {
@@ -720,6 +754,9 @@ void yield(void) {
         tss_set_kernel_stack(nxt->irq_stack + STACK_SIZE);
 
     switch_task_asm(cur, nxt);
+
+    if (nxt->state == PROCESS_RUNNING)
+        nxt->state = PROCESS_READY;
 
     current_pid = cur->pid;
     cur->state = PROCESS_RUNNING;
@@ -778,49 +815,84 @@ uint32_t scheduler_tick(uint32_t irq_esp) {
 }
 
 void list_processes(void) {
-    print("PID  STATE    PRIORITY  NAME\n");
+    print("PID  PPID  STATE    PRI  NAME\n");
     print("--------------------------------\n");
 
     for (int i = 0; i < process_count; i++) {
-        char buf[4];
+        char buf[8];
+        int pad;
 
         if (pcbs[i].state == PROCESS_UNUSED)
             continue;
 
         itoa(pcbs[i].pid, buf, 10);
-
         print(buf);
-        print("    ");
+        pad = 5 - (int)strlen(buf);
+        while (pad-- > 0)
+            print(" ");
 
-        switch (pcbs[i].state) {
-            case PROCESS_READY:
-                print("READY    ");
-                break;
+        itoa(pcbs[i].parent_pid, buf, 10);
+        print(buf);
+        pad = 6 - (int)strlen(buf);
+        while (pad-- > 0)
+            print(" ");
 
-            case PROCESS_RUNNING:
-                print("RUNNING  ");
-                break;
-
-            case PROCESS_BLOCKED:
-                print("BLOCKED  ");
-                break;
-
-            case PROCESS_ZOMBIE:
-                print("ZOMBIE   ");
-                break;
-
-            case PROCESS_UNUSED:
-                print("UNUSED   ");
-                break;
-        }
+        print(process_state_name(pcbs[i].state));
+        pad = 9 - (int)strlen(process_state_name(pcbs[i].state));
+        while (pad-- > 0)
+            print(" ");
 
         itoa(pcbs[i].priority, buf, 10);
-
         print(buf);
-        print("         ");
+        print("    ");
         print(pcbs[i].name);
         print("\n");
     }
+}
+
+void show_process_info(int pid)
+{
+    ProcessControlBlock *pcb;
+    char buf[12];
+
+    if (pid < 0 || pid >= MAX_PROCESSES) {
+        print("Error: invalid PID\n");
+        return;
+    }
+
+    if (pid >= process_count || pcbs[pid].state == PROCESS_UNUSED) {
+        print("Error: no such process\n");
+        return;
+    }
+
+    pcb = &pcbs[pid];
+
+    print("PID      : ");
+    itoa(pcb->pid, buf, 10);
+    print(buf);
+    print("\n");
+
+    print("Parent   : ");
+    itoa(pcb->parent_pid, buf, 10);
+    print(buf);
+    print("\n");
+
+    print("State    : ");
+    print(process_state_name(pcb->state));
+    print("\n");
+
+    print("Priority : ");
+    itoa(pcb->priority, buf, 10);
+    print(buf);
+    print("\n");
+
+    print("Name     : ");
+    print(pcb->name);
+    print("\n");
+
+    print("Mode     : ");
+    print(pcb->is_ring3 ? "ring-3" : "ring-0");
+    print("\n");
 }
 
 int get_current_pid(void) {
@@ -831,12 +903,56 @@ int get_process_count(void) {
     return active_processes();
 }
 
+void process_set_background(int pid, int background)
+{
+    if (pid <= 0 || pid >= process_count)
+        return;
+
+    if (pcbs[pid].state == PROCESS_UNUSED)
+        return;
+
+    pcbs[pid].job_background = background ? 1 : 0;
+}
+
+void list_shell_jobs(void)
+{
+    int i;
+    char buf[8];
+    int pad;
+
+    print("PID  STATE    NAME\n");
+    print("---------------------------\n");
+
+    for (i = 1; i < process_count; i++) {
+        if (pcbs[i].state == PROCESS_UNUSED)
+            continue;
+
+        if (pcbs[i].parent_pid != current_pid)
+            continue;
+
+        itoa(pcbs[i].pid, buf, 10);
+        print(buf);
+        pad = 5 - (int)strlen(buf);
+        while (pad-- > 0)
+            print(" ");
+
+        print(process_state_name(pcbs[i].state));
+        pad = 9 - (int)strlen(process_state_name(pcbs[i].state));
+        while (pad-- > 0)
+            print(" ");
+
+        print(pcbs[i].name);
+        print("\n");
+    }
+}
+
 int reap_zombies(void) {
     int count = 0;
 
     for (int i = 1; i < process_count; i++) {
         if (pcbs[i].state == PROCESS_ZOMBIE &&
-            pcbs[i].parent_pid == current_pid) {
+            pcbs[i].parent_pid == current_pid &&
+            !pcbs[i].job_background) {
             if (reap_process(i) == 0)
                 count++;
         }
@@ -851,13 +967,19 @@ int wait_process(int pid) {
     if (pid <= 0 || pid >= process_count)
         return -1;
 
+    if (pid == current_pid)
+        return -1;
+
     pcb = &pcbs[pid];
+
+    if (pcb->state == PROCESS_UNUSED)
+        return -1;
 
     if (pcb->parent_pid != current_pid)
         return -3;
 
-    if (pcb->state == PROCESS_UNUSED)
-        return -1;
+    if (pcb->state == PROCESS_ZOMBIE)
+        return reap_process(pid);
 
     for (;;) {
         if (pcb->state == PROCESS_ZOMBIE)

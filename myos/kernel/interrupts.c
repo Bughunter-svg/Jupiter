@@ -26,6 +26,7 @@ extern void isr_keyboard(void);
 extern void isr_mouse(void);
 extern void isr_page_fault(void);
 extern void isr_general_protection(void);
+extern void isr_invalid_opcode(void);
 
 static void idt_set_gate(unsigned char num,
                          unsigned long base,
@@ -47,6 +48,13 @@ static void init_idt(void)
     for (int i = 0; i < 256; i++) {
         idt_set_gate(i, 0, 0, 0);
     }
+
+    idt_set_gate(
+        6,
+        (unsigned long)isr_invalid_opcode,
+        KERNEL_CODE_SELECTOR,
+        0x8E
+    );
 
     idt_set_gate(
         13,

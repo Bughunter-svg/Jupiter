@@ -642,6 +642,8 @@ void general_protection_handler(uint32_t error_code)
     print("Error code: ");
     print_hex(error_code);
     print("\n");
+    if (error_code == 0x32U)
+        print("Hint: invalid opcode in user code or missing #UD handler.\n");
     print("System halted.\n");
 
     for (;;) {

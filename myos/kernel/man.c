@@ -60,19 +60,57 @@ static const man_entry_t man_pages[] = {
         "    exec - load and execute a program from the RAM filesystem\n"
         "SYNOPSIS\n"
         "    exec <filename>\n"
+        "    exec <filename> &\n"
         "DESCRIPTION\n"
         "    Loads a flat binary (org 0x00400000) from the RAM\n"
-        "    filesystem, creates a ring-3 process, runs it in the\n"
-        "    foreground, and waits until it exits.\n"
-        "    Sample programs seeded at boot include hello, ticker,\n"
-        "    echo, and big (multi-page test).\n"
+        "    filesystem and creates a ring-3 process.  Without &,\n"
+        "    runs in the foreground and waits until exit.  With &,\n"
+        "    starts a background job and returns immediately.\n"
+        "    echo cannot run in background: shell and ring-3 share\n"
+        "    the same keyboard port without multiplexing.\n"
         "EXAMPLES\n"
         "    exec hello\n"
-        "    exec ticker\n"
+        "    exec ticker &\n"
         "    exec echo\n"
-        "    exec big\n"
         "SEE ALSO\n"
-        "    ls(1), ps(1), wait(1), help(1)\n"
+        "    jobs(1), fg(1), wait(1), ps(1)\n"
+    },
+    {
+        "jobs",
+        "NAME\n"
+        "    jobs - list shell child processes\n"
+        "SYNOPSIS\n"
+        "    jobs\n"
+        "DESCRIPTION\n"
+        "    Lists PID, state, and name for processes whose parent\n"
+        "    is the shell.  Includes zombies until reaped with fg\n"
+        "    or wait.  Does not reap processes.\n"
+        "SEE ALSO\n"
+        "    fg(1), exec(1), ps(1), wait(1)\n"
+    },
+    {
+        "fg",
+        "NAME\n"
+        "    fg - wait for a background job to finish\n"
+        "SYNOPSIS\n"
+        "    fg <pid>\n"
+        "DESCRIPTION\n"
+        "    Waits for the given child process to exit and reaps it.\n"
+        "    Works for running or already-zombie background jobs.\n"
+        "SEE ALSO\n"
+        "    jobs(1), exec(1), wait(1)\n"
+    },
+    {
+        "bg",
+        "NAME\n"
+        "    bg - resume a suspended job\n"
+        "SYNOPSIS\n"
+        "    bg <pid>\n"
+        "DESCRIPTION\n"
+        "    Not supported.  The scheduler does not suspend jobs\n"
+        "    for later resume; use fg to wait for completion.\n"
+        "SEE ALSO\n"
+        "    fg(1), jobs(1)\n"
     },
     {
         "ls",
@@ -185,9 +223,25 @@ static const man_entry_t man_pages[] = {
         "SYNOPSIS\n"
         "    ps\n"
         "DESCRIPTION\n"
-        "    Shows PID, state, priority, and name for each process.\n"
+        "    Shows PID, parent PID, state, priority, and name for\n"
+        "    each process in the process table.\n"
         "SEE ALSO\n"
-        "    run(1), exec(1), wait(1), yield(1)\n"
+        "    procinfo(1), run(1), exec(1), wait(1), yield(1)\n"
+    },
+    {
+        "procinfo",
+        "NAME\n"
+        "    procinfo - show one process control block\n"
+        "SYNOPSIS\n"
+        "    procinfo <pid>\n"
+        "DESCRIPTION\n"
+        "    Prints PID, parent PID, state, priority, name, and\n"
+        "    ring-0 or ring-3 mode for the given process.\n"
+        "EXAMPLES\n"
+        "    procinfo 0\n"
+        "    procinfo 1\n"
+        "SEE ALSO\n"
+        "    ps(1), wait(1), exec(1)\n"
     },
     {
         "run",
@@ -725,7 +779,7 @@ void shell_print_help(void)
     print("JupiterOS shell\n\n");
     print("Categories:\n");
     print("  files     ls create read cp delete edit append info df exec\n");
-    print("  process   ps run exec wait yield tickers ticker crash ring3proc\n");
+    print("  process   ps procinfo jobs fg bg exec wait yield tickers ticker crash\n");
     print("  memory    pmm meminfo memmap paging vmtest pmtest memtest\n");
     print("  system    clear timer uptime sleep help man cpuinfo osinfo\n");
     print("  network   net ping ifconfig arp\n");
